@@ -24,4 +24,4 @@ Using this techs:
   "accessTokenAcceptedVersion": 2,
   ```
 
-- blah
+- However, saving the app fails with the error message "the app was not found".
