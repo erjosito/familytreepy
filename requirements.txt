@@ -2,6 +2,7 @@ streamlit
 futures
 st-link-analysis
 streamlit-navigation-bar
+pages
 networkx
 authlib
 azure-storage-blob
