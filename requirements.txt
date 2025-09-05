@@ -1,8 +1,10 @@
 streamlit
 futures
 st-link-analysis
-streamlit-navigation-bar
+streamlit-community-navigation-bar
+pages
 networkx
 authlib
 azure-storage-blob
 gremlinpython
+matplotlib
