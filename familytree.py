@@ -1,6 +1,7 @@
 import networkx as nx
 import uuid
 import os
+import json
 from gremlin_python.driver import client, serializer
 
 class FamilyTree:
@@ -18,6 +19,8 @@ class FamilyTree:
         self.cosmosdb_collection = cosmosdb_collection
         self.cosmosdb_key = cosmosdb_key
         self.autosave = autosave
+        if self.backend == "local" and len(self.localfile) > 0:
+            self.tempfile = os.path.splitext(self.localfile)[0] + "_temp" + os.path.splitext(self.localfile)[1]
         # Create new graph or load it
         if self.backend == 'local':
             if not self.localfile:
@@ -60,8 +63,15 @@ class FamilyTree:
             raise ValueError("Invalid backend specified")
     def save_local(self):
         # Save the graph to a local file
-        if self.localfile:
-            nx.write_gml(self.graph, self.localfile)
+        if self.localfile and self.tempfile:
+            try:
+                nx.write_gml(self.graph, self.tempfile)
+            except Exception as e:
+                print(f"Error saving graph to temporary file: {e}")
+            finally:
+                # Move the temporary file to the original location
+                if os.path.exists(self.tempfile):
+                    os.replace(self.tempfile, self.localfile)
         else:
             raise ValueError("Local file must be specified to save data when using backend=local")
     def save_azstorage(self):
@@ -106,10 +116,73 @@ class FamilyTree:
     def set_localfile(self, localfile):
         self.localfile = localfile
     ###############
+    #    Import   #
+    ###############
+    def import_from_app_json(self, json_data_file):
+        # Clear the existing graph
+        self.graph.clear()
+        # Load the JSON file into a JSON object, and raise an exception if the file contains invalid JSON
+        try:
+            with open(json_data_file, 'r', encoding='utf8') as f:
+                json_data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON file: {e}")
+        # Add the nodes into the graph
+        if 'nodes' in json_data and 'infos' in json_data:
+            # Disable autosave for the import
+            old_autosave_value = self.autosave
+            self.autosave = False
+            # First add the nodes
+            node_count = 0
+            for node_id in json_data['nodes']:
+                if 'infoId' in json_data['nodes'][node_id]:
+                    node_info_id = json_data['nodes'][node_id]["infoId"]
+                    node_info = json_data['infos'][node_info_id]
+                    new_node_attributes = {
+                        'label': 'person',
+                        'firstname': node_info.get('firstName', ''),
+                        'lastname': node_info.get('lastName', ''),
+                        'birthdate': node_info.get('dob', ''),
+                        'isAlive': not node_info.get('isAbsent', False),
+                        'deathdate': node_info.get('dod', ''),
+                    }
+                    self.add_person(id=node_id, **new_node_attributes)
+                else:
+                    raise ValueError(f"Node {node_id} is missing 'infoId' attribute")
+                node_count += 1
+            # Now add the edges
+            for node_id in json_data['nodes']:
+                if 'relations' in json_data['nodes'][node_id]:
+                    for relation in json_data['nodes'][node_id]['relations']:
+                        target_id = relation.get('to')
+                        if target_id in self.graph and node_id in self.graph:
+                            if relation.get('type') == 'parent':
+                                self.add_relationship(node_id, target_id, type='isChildOf')
+                            elif relation.get('type') == 'child':
+                                self.add_relationship(target_id, node_id, type='isChildOf')
+                            elif relation.get('type') == 'spouse':
+                                self.add_relationship(node_id, target_id, type='isSpouseOf')
+                                self.add_relationship(target_id, node_id, type='isSpouseOf')
+                            else:
+                                raise ValueError(f"Invalid relationship type {relation.get('type')} for nodes {node_id} and {target_id}")
+                        else:
+                            raise ValueError(f"Cannot create relationship: one of the nodes {node_id} or {target_id} does not exist")
+            # Restore previous autosave value and save the tree
+            self.save_local()
+            self.autosave = old_autosave_value
+            # Done!
+            return node_count
+        else:
+            raise ValueError("Invalid JSON format: 'nodes' and 'infos' keys are required")
+
+    ###############
     #     Add     #
     ###############
-    def add_person(self, **attributes):
-        person_id = str(uuid.uuid4())
+    def add_person(self, id=None, **attributes):
+        if id is not None:
+            person_id = id  # Not enforcing that ID is a valid UUID
+        else:
+            person_id = str(uuid.uuid4())
         self.graph.add_node(person_id, **attributes)
         if self.autosave:
             self.save()
@@ -208,13 +281,32 @@ class FamilyTree:
             })
         return {"nodes": nodes, "edges": edges}
     ###############
+    #   Pictures  #
+    ###############
+    def add_picture(self, person_id, picture_url):
+        if person_id not in self.graph:
+            raise ValueError("Person must be in the family tree")
+        if 'pictures' not in self.graph.nodes[person_id]:
+            self.graph.nodes[person_id]["pictures"] = []
+        self.graph.nodes[person_id]["pictures"].append(picture_url)
+        if self.autosave:
+            self.save()
+
+    ###############
     #    Delete   #
     ###############
     def delete_person(self, person_id):
         if person_id in self.graph:
             self.graph.remove_node(person_id)
+        if self.autosave:
+            self.save()
+        if self.backend == 'cosmosdb':
+            # Remove the node from CosmosDB
+            pass
+        return person_id
     def delete_all(self):
         self.graph.clear()
+        
     ###############
     #    Debug    #
     ###############

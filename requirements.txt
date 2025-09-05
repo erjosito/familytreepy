@@ -1,0 +1,4 @@
+streamlit
+streamlit-link-analysis
+networkx
+azure-storage-blob
