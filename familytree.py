@@ -3,6 +3,8 @@ import uuid
 import os
 import json
 from gremlin_python.driver import client, serializer
+from azure.storage.blob import BlobServiceClient
+
 
 class FamilyTree:
     # Backends can be local, azstorage, cosmosdb
@@ -118,9 +120,21 @@ class FamilyTree:
     ###############
     #    Import   #
     ###############
-    def import_from_app_json(self, json_data_file):
+    def import_from_app_json(self, json_data_file, import_pics=False, pics_folder=None, azure_storage_account=None, azure_storage_key=None, azure_storage_container=None):
         # Clear the existing graph
         self.graph.clear()
+        # Optionally, upload the images to the provided Azure Storage account, verifying that the provided folder exists
+        if import_pics and pics_folder and azure_storage_account and azure_storage_key and azure_storage_container and os.path.exists(pics_folder):
+            blob_service_client = BlobServiceClient.from_connection_string(f"DefaultEndpointsProtocol=https;AccountName={azure_storage_account};AccountKey={azure_storage_key}")
+            # blob_service_client = BlobServiceClient(account_url=azure_storage_account, credential=azure_storage_key)
+            # container_client = blob_service_client.get_container_client(azure_storage_container)
+            for root, dirs, files in os.walk(pics_folder):
+                for filename in files:
+                    file_path = os.path.join(root, filename)
+                    # blob_client = container_client.get_blob_client(blob=filename)
+                    blob_client = blob_service_client.get_blob_client(container=azure_storage_container, blob=filename)
+                    with open(file_path, "rb") as data:
+                        blob_client.upload_blob(data)
         # Load the JSON file into a JSON object, and raise an exception if the file contains invalid JSON
         try:
             with open(json_data_file, 'r', encoding='utf8') as f:
@@ -146,6 +160,9 @@ class FamilyTree:
                         'isAlive': not node_info.get('isAbsent', False),
                         'deathdate': node_info.get('dod', ''),
                     }
+                    # Add the picture info if the option 'import_pics' is enabled
+                    if import_pics and 'profilePhoto' in node_info:
+                        new_node_attributes['pictures'] = [ f"https://{azure_storage_account}.blob.core.windows.net/{azure_storage_container}/{node_info['profilePhoto']}" ]
                     self.add_person(id=node_id, **new_node_attributes)
                 else:
                     raise ValueError(f"Node {node_id} is missing 'infoId' attribute")

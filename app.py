@@ -224,6 +224,7 @@ with st.container(border=True):
             with st.popover(label="Edit"):
                 st.write("Editing " + selected_node_id)
                 if selected_node:
+                    date_format = "%a %b %d %Y"
                     if "firstname" in selected_node:
                         default_firstname = selected_node['firstname']
                     else:
@@ -232,9 +233,9 @@ with st.container(border=True):
                         default_lastname = selected_node['lastname']
                     else:
                         default_lastname = ""
-                    if "birthdate" in selected_node:
+                    if "birthdate" in selected_node and len(selected_node['birthdate']) > 0:
                         try:
-                            default_birthdate = datetime.strptime(selected_node['birthdate']).date()
+                            default_birthdate = datetime.datetime.strptime(selected_node['birthdate'], date_format).date()
                         except:
                             default_birthdate = datetime.date.today()  # In case the string cannot be converted to a date
                     else:
@@ -247,8 +248,8 @@ with st.container(border=True):
                         default_isAlive = selected_node['isAlive']
                     else:
                         default_isAlive = True
-                    if "deathdate" in selected_node:
-                        default_deathdate = datetime.strptime(selected_node['deathdate']).date()
+                    if "deathdate" in selected_node and len(selected_node['deathdate']) > 0:
+                        default_deathdate = datetime.datetime.strptime(selected_node['deathdate'], date_format).date()
                     else:
                         default_deathdate = datetime.date.today()
                     firstname = st.text_input("First name", value=default_firstname, key='edit_firstname')
@@ -378,12 +379,25 @@ with import_container.container():
     with st.popover(label="Import"):
         st.write("Select a file containing data exported by the third-party app 'Family Tree':")
         import_filename = st.text_input("File path", value=tree.localfile, key="import_filename")
+        import_picsfolder = st.text_input("Pictures folder", value=os.path.dirname(tree.localfile), key="import_picsfolder")
         colr1, colr2 = st.columns(2)
         if colr1.button("Cancel", key="import_cancel"):
             import_container.empty()
             st.rerun()
         if colr2.button("Yes, import tree", key="import_ok"):
-            nodes_added = tree.import_from_app_json(import_filename)
+            if len(import_picsfolder) > 0:
+                nodes_added = tree.import_from_app_json(
+                    import_filename, 
+                    import_pics=True, 
+                    pics_folder=import_picsfolder, 
+                    azure_storage_account=azure_storage_account, 
+                    azure_storage_key=azure_storage_key, 
+                    azure_storage_container=azure_storage_container)
+            else:
+                nodes_added = tree.import_from_app_json(
+                    import_filename,
+                    import_pics=False,
+                )
             st.write(f"Imported {nodes_added} nodes.")
             import_container.empty()
             st.rerun()

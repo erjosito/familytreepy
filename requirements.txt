@@ -1,4 +1,8 @@
 streamlit
-streamlit-link-analysis
+futures
+st-link-analysis
+streamlit-navigation-bar
 networkx
+authlib
 azure-storage-blob
+gremlinpython
