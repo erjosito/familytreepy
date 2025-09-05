@@ -2,6 +2,7 @@ import networkx as nx
 import uuid
 import os
 import json
+import tempfile
 from gremlin_python.driver import client, serializer
 from azure.storage.blob import BlobServiceClient
 
@@ -11,10 +12,16 @@ class FamilyTree:
     # If local is specified, the following parameter must be provided: localfile
     # If azstorage is specified, the following parameters must be provided: azstorage, azstoragekey
     # If cosmosdb is specified, the following parameters must be provided: cosmosdbhost, cosmosdbkey
-    def __init__(self, backend='local', localfile=None, azstorage_account=None, azstorage_key=None, cosmosdb_host=None, cosmosdb_db=None, cosmosdb_collection=None, cosmosdb_key=None, autosave=True):
+    def __init__(self, 
+                 backend='local', autosave=True,
+                 localfile=None, 
+                 azstorage_account=None, azstorage_key=None, azstorage_container=None, azstorage_blob=None, 
+                 cosmosdb_host=None, cosmosdb_db=None, cosmosdb_collection=None, cosmosdb_key=None):
         self.backend = backend
         self.localfile = localfile
         self.azstorage_account = azstorage_account
+        self.azstorage_container = azstorage_container
+        self.azstorage_blob = azstorage_blob
         self.azstorage_key = azstorage_key
         self.cosmosdb_host = cosmosdb_host
         self.cosmosdb_db = cosmosdb_db
@@ -38,7 +45,18 @@ class FamilyTree:
                     self.graph = nx.DiGraph()
         # To Do: mimick local behavior
         elif self.backend == 'azstorage':
-            self.load_azstorage()
+            if not self.azstorage_account or not self.azstorage_key or not self.azstorage_container or not self.azstorage_blob:
+                raise ValueError("All Azure Storage parameters must be provided: azstorage_account, azstorage_key, azstorage_container, azstorage_blob")
+            # load_azstorage() will return true if successful
+            elif self.load_azstorage():
+                print("Graph loaded successfully")
+            else:
+                # Error loading Azure Storage file, initializing empty graph
+                self.graph = nx.DiGraph()
+                try:
+                    self.save_azstorage()
+                except Exception as e:
+                    print(f"Error saving Azure Storage file: {e}")
         elif self.backend == 'cosmosdb':
             self.load_cosmosdb()
         elif self.backend == 'cosmosdb':
@@ -65,20 +83,42 @@ class FamilyTree:
             raise ValueError("Invalid backend specified")
     def save_local(self):
         # Save the graph to a local file
-        if self.localfile and self.tempfile:
+        # if self.localfile and self.tempfile:
+        #     try:
+        #         nx.write_gml(self.graph, self.tempfile)
+        #     except Exception as e:
+        #         print(f"Error saving graph to temporary file: {e}")
+        #     finally:
+        #         # Move the temporary file to the original location
+        #         if os.path.exists(self.tempfile):
+        #             os.replace(self.tempfile, self.localfile)
+        if self.localfile:
+            temp_dir = tempfile.TemporaryDirectory()
+            temp_file = os.path.join(temp_dir.name, "graph.gml")
             try:
-                nx.write_gml(self.graph, self.tempfile)
+                nx.write_gml(self.graph, temp_file)
             except Exception as e:
                 print(f"Error saving graph to temporary file: {e}")
             finally:
                 # Move the temporary file to the original location
-                if os.path.exists(self.tempfile):
-                    os.replace(self.tempfile, self.localfile)
+                if os.path.exists(temp_file):
+                    os.replace(temp_file, self.localfile)
         else:
             raise ValueError("Local file must be specified to save data when using backend=local")
+    # Save the graph to a local file in a local temporary directory and upload it to blob storage
     def save_azstorage(self):
-        # Save the graph to Azure Storage
-        pass
+        if self.azstorage_account and self.azstorage_key and self.azstorage_container and self.azstorage_blob:
+            blob_service_client = BlobServiceClient.from_connection_string(f"DefaultEndpointsProtocol=https;AccountName={self.azstorage_account};AccountKey={self.azstorage_key}")
+            blob_client = blob_service_client.get_blob_client(container=self.azstorage_container, blob=self.azstorage_blob)
+            temp_dir = tempfile.TemporaryDirectory()
+            temp_file = os.path.join(temp_dir.name, "graph.gml")
+            try:
+                nx.write_gml(self.graph, temp_file)
+                with open(temp_file, "rb") as data:
+                    blob_client.upload_blob(data, overwrite=True)
+            except Exception as e:
+                print(f"Error saving graph to Azure Storage: {e}")
+    # To Do: export the graph to CosmosDB
     def save_cosmosdb(self):
         # Save the graph to Azure Cosmos DB
         pass
@@ -95,6 +135,23 @@ class FamilyTree:
         # Load the graph from a local file
         if self.localfile:
             self.graph = nx.read_gml(self.localfile)
+        else:
+            raise ValueError("Local file must be specified to load data when using backend=local")
+    def load_azstorage(self):
+        # Download the graph from Azure Storage to a temp file and open it
+        if self.azstorage_account and self.azstorage_key and self.azstorage_container and self.azstorage_blob:
+            blob_service_client = BlobServiceClient.from_connection_string(f"DefaultEndpointsProtocol=https;AccountName={self.azstorage_account};AccountKey={self.azstorage_key}")
+            blob_client = blob_service_client.get_blob_client(container=self.azstorage_container, blob=self.azstorage_blob)
+            temp_dir = tempfile.TemporaryDirectory()
+            temp_file = os.path.join(temp_dir.name, "graph.gml")
+            try:
+                with open(temp_file, mode="wb") as f:
+                    f.write(blob_client.download_blob().readall())
+                self.graph = nx.read_gml(temp_file)
+                return True
+            except Exception as e:
+                # print(f"Error loading graph from Azure Storage: {e}")
+                return False
         else:
             raise ValueError("Local file must be specified to load data when using backend=local")
     def load_cosmosdb(self):
@@ -134,7 +191,7 @@ class FamilyTree:
                     # blob_client = container_client.get_blob_client(blob=filename)
                     blob_client = blob_service_client.get_blob_client(container=azure_storage_container, blob=filename)
                     with open(file_path, "rb") as data:
-                        blob_client.upload_blob(data)
+                        blob_client.upload_blob(data, overwrite=True)
         # Load the JSON file into a JSON object, and raise an exception if the file contains invalid JSON
         try:
             with open(json_data_file, 'r', encoding='utf8') as f:
@@ -185,7 +242,7 @@ class FamilyTree:
                         else:
                             raise ValueError(f"Cannot create relationship: one of the nodes {node_id} or {target_id} does not exist")
             # Restore previous autosave value and save the tree
-            self.save_local()
+            self.save()
             self.autosave = old_autosave_value
             # Done!
             return node_count

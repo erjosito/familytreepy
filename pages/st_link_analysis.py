@@ -1,6 +1,7 @@
 import streamlit as st
 import uuid
 import os
+from pathlib import Path
 import datetime
 from st_link_analysis import st_link_analysis, NodeStyle, EdgeStyle
 from st_link_analysis.component.layouts import LAYOUTS
@@ -10,13 +11,13 @@ from azure.storage.blob import BlobServiceClient
 # Global constants
 COMPONENT_KEY = "NODE_ACTIONS"
 
-# Function to upload file to Azure Storage
-def upload_to_azure_storage(file, account_name=None, container_name=None, account_key=None):
+# Function to upload file to Azure Storage, used to upload images
+def upload_to_azure_storage(file, account_name=None, container_name=None, account_key=None, overwrite=True):
     file_extension = os.path.splitext(file.name)[1]
     blob_name = str(uuid.uuid4()) + file_extension
     blob_service_client = BlobServiceClient.from_connection_string(f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key}")
     blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
-    blob_client.upload_blob(file)
+    blob_client.upload_blob(file, overwrite=overwrite)
     blob_url = f"https://{account_name}.blob.core.windows.net/{container_name}/{blob_name}"
     return blob_url
 
@@ -41,19 +42,25 @@ def show_st_link_analysis():
     # Verify authentication
     st.header(f"Welcome, {st.user.name}!")
 
-    # Initialize the family tree
-    tree = FamilyTree(backend='local', localfile='C:\\Users\\jomore\\Downloads\\familytree.gml')
-    tree_st = tree.format_for_st_link_analysis()
-
-    # Required for graph interaction
-    LAYOUT_NAMES = list(LAYOUTS.keys())
-    selected_nodes = []
+    # Description
+    st.write("This page uses the StreamLit module [streamlit-link-analysis](https://github.com/ikko/streamlit-link-analysis) for visualizing the graph. This module allows to select nodes/links in the graph, so this page contains logic to update the graph and to show the pictures of an individual node.")
 
     # Initialize azure storage credentials from secrets.toml file
     azure_storage_account = st.secrets['storage']["azure_storage_account"]
     azure_storage_container = st.secrets['storage']["azure_storage_container"]
     azure_storage_key = st.secrets['storage']["azure_storage_key"]
     azure_storage_sas = st.secrets['storage']["azure_storage_sas"]
+
+    # Initialize the family tree
+    # tree = FamilyTree(backend='local', localfile='C:\\Users\\jomore\\Downloads\\familytree.gml')
+    tree = FamilyTree(backend='azstorage', azstorage_account=azure_storage_account, azstorage_key=azure_storage_key, azstorage_container="familytreejson", azstorage_blob='familytree.gml')
+
+    # Generate a Streamlit-compatible representation of the graph
+    tree_st = tree.format_for_st_link_analysis()
+
+    # Required for graph interaction
+    LAYOUT_NAMES = list(LAYOUTS.keys())
+    selected_nodes = []
 
     if not hasattr(st.session_state, "graph"):
         st.session_state.graph = tree_st
@@ -65,7 +72,7 @@ def show_st_link_analysis():
         EdgeStyle("isSpouseOf", caption='label', directed=True)
     ]
 
-    layout = st.selectbox("Choose the graph layout", LAYOUT_NAMES, index=0)
+    layout = st.selectbox("Choose the graph layout for the st-link-analysis representation:", LAYOUT_NAMES, index=0)
     # layout = {"name": "cose", "animate": "end", "nodeDimensionsIncludeLabels": False}
 
     elements = st.session_state.graph
@@ -373,8 +380,8 @@ def show_st_link_analysis():
     with import_container.container():
         with st.popover(label="Import"):
             st.write("Select a file containing data exported by the third-party app 'Family Tree':")
-            import_filename = st.text_input("File path", value=tree.localfile, key="import_filename")
-            import_picsfolder = st.text_input("Pictures folder", value=os.path.dirname(tree.localfile), key="import_picsfolder")
+            import_filename = st.text_input("File path", value=Path.home(), key="import_filename")
+            import_picsfolder = st.text_input("Pictures folder", value=Path.home(), key="import_picsfolder")
             colr1, colr2 = st.columns(2)
             if colr1.button("Cancel", key="import_cancel"):
                 import_container.empty()

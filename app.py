@@ -12,37 +12,18 @@ if not st.user.is_logged_in:
 # From this point the user is authenticated
 
 # Navigation bar
-st.set_page_config(initial_sidebar_state="collapsed")
+# st.set_page_config(initial_sidebar_state="collapsed")
 pages = ["Home", "st-link-analysis", "pyvis", "Logout"]
-styles = {
-    "nav": {
-        "background-color": "royalblue",
-        "justify-content": "left",
-    },
-    "img": {
-        "padding-right": "14px",
-    },
-    "span": {
-        "color": "white",
-        "padding": "14px",
-    },
-    "active": {
-        "background-color": "white",
-        "color": "var(--text-color)",
-        "font-weight": "normal",
-        "padding": "14px",
-    }
-}
 options = {
     "show_menu": True,
     "show_sidebar": False,
+    "hide_nav": True,
+    "fix_shadow": True
 }
 page = st_navbar(
     pages,
-    styles=styles,
-    options=options,
+    options=options
 )
-# page = st_navbar(pages)
 functions = {
     "Home": pg.show_home,
     "st-link-analysis": pg.show_st_link_analysis,
@@ -50,5 +31,9 @@ functions = {
     "Logout": pg.logout
 }
 go_to = functions.get(page)
+
+# st.header(f"Welcome to root, {st.user.name}!")
+# st.write("Please select a graph implementation from the menu.")
+
 if go_to:
     go_to()
