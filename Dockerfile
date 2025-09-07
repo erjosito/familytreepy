@@ -19,7 +19,7 @@ COPY ./app.py ./
 COPY ./familytree.py ./
 RUN mkdir -p .streamlit
 RUN mkdir -p pages
-COPY ./.streamlit/* .streamlit/
+COPY ./.streamlit/secretsazure.toml .streamlit/secrets.toml
 COPY ./pages/*.py pages/
 
 # Expose Streamlit default port

@@ -12,7 +12,7 @@ def show_pyvis(user_role='user'):
     st.header(f"Welcome, {st.user.name}!")
 
     # Page content
-    st.write("This page shows graph visualizations using the [pyvis library](https://pyvis.readthedocs.io/en/latest/).")
+    # st.write("This page shows graph visualizations using the [pyvis library](https://pyvis.readthedocs.io/en/latest/).")
 
     # Initialize azure storage credentials from secrets.toml file
     azure_storage_account = st.secrets['storage']["azure_storage_account"]

@@ -21,18 +21,39 @@ else:
         st.logout()
     st.stop()
 
-# From this point the user is authenticated and authorized
-
-# Navigation bar
 if user_role == 'admin':
-    pages = ["Home", "st-link-analysis", "pyvis", "Admin", "Logout"]
+    pages = ["Edit", "View", "Admin", "Logout"]
 elif user_role == 'user':
-    pages = ["Home", "pyvis", "Logout"]
+    pages = ["View", "Logout"]
 else:
     st.error(f"User role '{user_role}' is not recognized. Please contact the administrator.")
     if st.button("Log out"):
         st.logout()
     st.stop()
+
+# From this point the user is authenticated and authorized
+
+# Navigation bar
+logo_path = "treelogo01.svg"
+styles = {
+    "nav": {
+        "background-color": "royalblue",
+        "justify-content": "left",
+    },
+    "img": {
+        "padding-right": "14px",
+    },
+    "span": {
+        "color": "white",
+        "padding": "14px",
+    },
+    "active": {
+        "background-color": "white",
+        "color": "var(--text-color)",
+        "font-weight": "normal",
+        "padding": "14px",
+    }
+}
 options = {
     "show_menu": True,
     "show_sidebar": False,
@@ -41,12 +62,15 @@ options = {
 }
 page = st_navbar(
     pages,
+    logo_path=logo_path,
+    styles=styles,
     options=options
 )
 functions = {
     "Home": pg.show_home,
-    "st-link-analysis": pg.show_st_link_analysis,
-    "pyvis": pg.show_pyvis,
+    "Edit": pg.show_st_link_analysis,
+    "View": pg.show_pyvis,
+    # "View": pg.show_graphviz,
     "Admin": pg.show_admin,
     "Logout": pg.logout
 }

@@ -43,7 +43,7 @@ def show_st_link_analysis(user_role='user'):
     st.header(f"Welcome, {st.user.name}!")
 
     # Description
-    st.write("This page uses the StreamLit module [streamlit-link-analysis](https://github.com/ikko/streamlit-link-analysis) for visualizing the graph. This module allows to select nodes/links in the graph, so this page contains logic to update the graph and to show the pictures of an individual node.")
+    # st.write("This page uses the StreamLit module [streamlit-link-analysis](https://github.com/ikko/streamlit-link-analysis) for visualizing the graph. This module allows to select nodes/links in the graph, so this page contains logic to update the graph and to show the pictures of an individual node.")
 
     # Initialize azure storage credentials from secrets.toml file
     azure_storage_account = st.secrets['storage']["azure_storage_account"]
@@ -72,7 +72,7 @@ def show_st_link_analysis(user_role='user'):
         EdgeStyle("isSpouseOf", caption='label', directed=True)
     ]
 
-    layout = st.selectbox("Choose the graph layout for the st-link-analysis representation:", LAYOUT_NAMES, index=0)
+    layout = st.selectbox("Choose the graph layout for the tree representation:", LAYOUT_NAMES, index=0)
     # layout = {"name": "cose", "animate": "end", "nodeDimensionsIncludeLabels": False}
 
     elements = st.session_state.graph
