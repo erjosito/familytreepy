@@ -1,10 +1,11 @@
 streamlit
-futures
 st-link-analysis
 streamlit-community-navigation-bar
-pages
-networkx
 authlib
+futures
 azure-storage-blob
 gremlinpython
 matplotlib
+networkx
+pyvis
+stvis

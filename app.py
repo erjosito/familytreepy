@@ -9,11 +9,30 @@ if not st.user.is_logged_in:
         st.login()
     st.stop()
 
-# From this point the user is authenticated
+# Verify that the user's email is in the list of allowed users (stored in Azure Storage as a JSON file) and get the level of privilege (user or admin) for that user.
+allowed_users = pg.get_allowed_users()
+user_role = pg.get_user_role(st.user.email, allowed_users)
+if user_role:
+    # st.success(f"User '{st.user.email}' is authorized to use this app. Privilege level: {user_role}")
+    pass
+else:
+    # st.error("No users are authorized to use this app. Please contact the administrator.")
+    if st.button("Log out"):
+        st.logout()
+    st.stop()
+
+# From this point the user is authenticated and authorized
 
 # Navigation bar
-# st.set_page_config(initial_sidebar_state="collapsed")
-pages = ["Home", "st-link-analysis", "pyvis", "Logout"]
+if user_role == 'admin':
+    pages = ["Home", "st-link-analysis", "pyvis", "Admin", "Logout"]
+elif user_role == 'user':
+    pages = ["Home", "pyvis", "Logout"]
+else:
+    st.error(f"User role '{user_role}' is not recognized. Please contact the administrator.")
+    if st.button("Log out"):
+        st.logout()
+    st.stop()
 options = {
     "show_menu": True,
     "show_sidebar": False,
@@ -28,6 +47,7 @@ functions = {
     "Home": pg.show_home,
     "st-link-analysis": pg.show_st_link_analysis,
     "pyvis": pg.show_pyvis,
+    "Admin": pg.show_admin,
     "Logout": pg.logout
 }
 go_to = functions.get(page)
@@ -36,4 +56,4 @@ go_to = functions.get(page)
 # st.write("Please select a graph implementation from the menu.")
 
 if go_to:
-    go_to()
+    go_to(user_role=user_role)

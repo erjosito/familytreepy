@@ -38,7 +38,7 @@ def onchange_callback():
     #     st.write(val["data"]["node_ids"])
     selected_nodes = val["data"]["node_ids"]
 
-def show_st_link_analysis():
+def show_st_link_analysis(user_role='user'):
     # Verify authentication
     st.header(f"Welcome, {st.user.name}!")
 
@@ -302,16 +302,32 @@ def show_st_link_analysis():
             ###############
             # Add picture #
             ###############
-            addpiccontainer = col1.empty()
+            addprofilepiccontainer = col1.empty()
+            with addprofilepiccontainer.container():
+                with st.popover(label="Add profile picture"):
+                    st.write("Select picture file to add to " + selected_node_id)
+                    uploaded_file = st.file_uploader("Choose a picture", type=["png", "jpg"], key="addprofilepic_uploader")
+                    col61, col62 = st.columns(2)
+                    if col61.button("Cancel", key="addprofilepic_cancel"):
+                        addprofilepiccontainer.empty()
+                        st.rerun()
+                    if col62.button("OK", key="addprofilepic_ok"):
+                        if uploaded_file is not None:
+                            # Upload to Azure Storage
+                            picture_url = upload_to_azure_storage(uploaded_file, azure_storage_account, azure_storage_container, azure_storage_key)
+                            tree.add_profile_picture(selected_node_id, picture_url)
+                        addprofilepiccontainer.empty()
+                        st.rerun()
+            addpiccontainer = col2.empty()
             with addpiccontainer.container():
                 with st.popover(label="Add picture"):
                     st.write("Select picture file to add to " + selected_node_id)
-                    uploaded_file = st.file_uploader("Choose a picture", type=["png", "jpg"])
-                    col61, col62 = st.columns(2)
-                    if col61.button("Cancel", key="addpic_cancel"):
+                    uploaded_file = st.file_uploader("Choose a picture", type=["png", "jpg"], key="addpic_uploader")
+                    col71, col72 = st.columns(2)
+                    if col71.button("Cancel", key="addpic_cancel"):
                         addpiccontainer.empty()
                         st.rerun()
-                    if col62.button("OK", key="addpic_ok"):
+                    if col72.button("OK", key="addpic_ok"):
                         if uploaded_file is not None:
                             # Upload to Azure Storage
                             picture_url = upload_to_azure_storage(uploaded_file, azure_storage_account, azure_storage_container, azure_storage_key)
@@ -321,6 +337,20 @@ def show_st_link_analysis():
             #################
             # View pictures #
             #################
+            viewprofilepiccontainer = col1.empty()
+            with viewprofilepiccontainer.container():
+                with st.popover(label="View profile picture"):
+                    st.write("Profile picture for " + selected_node_id)
+                    if selected_node:
+                        picture_url = selected_node.get('profilepic', None)
+                        if picture_url:
+                            picture_url = picture_url + "?" + azure_storage_sas
+                            st.image(picture_url, width=50)
+                        else:
+                            st.write("No profile picture found")
+                    if st.button("Close", key="viewprofilepic_cancel"):
+                        viewprofilepiccontainer.empty()
+                        st.rerun()
             viewpiccontainer = col2.empty()
             with viewpiccontainer.container():
                 with st.popover(label="View pictures"):

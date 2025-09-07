@@ -319,6 +319,82 @@ class FamilyTree:
             for key, value in attributes.items():
                 gremlin_query += f".property('{key}', '{value}')"
             self.cosmosdb_client.submit(gremlin_query).all().result()
+    #################
+    #   Subgraphs   #
+    #################
+    # Get a subgraph centered on a person, including all nodes within 'degree' relationship hops
+    def get_subgraph_degrees(self, person_id, degree=1):
+        if person_id not in self.graph:
+            raise ValueError("Person must be in the family tree")
+        nodes_within_degree = nx.single_source_shortest_path_length(self.graph.to_undirected(), person_id, cutoff=degree).keys()
+        return self.graph.subgraph(nodes_within_degree).copy()
+    # Get a subgraph containing all paths between two persons
+    def get_subgraph_between(self, person1_id, person2_id):
+        if person1_id not in self.graph or person2_id not in self.graph:
+            raise ValueError("Both persons must be in the family tree")
+        try:
+            paths = list(nx.all_shortest_paths(self.graph.to_undirected(), source=person1_id, target=person2_id))
+            nodes_in_paths = set()
+            for path in paths:
+                nodes_in_paths.update(path)
+            return self.graph.subgraph(nodes_in_paths).copy()
+        except nx.NetworkXNoPath:
+            return nx.DiGraph()
+    # Get the longest chain of ancestors in the tree using edges of type 'isChildOf'
+    def get_longest_ancestor_chain(self):
+        def dfs(current_node, visited):
+            visited.add(current_node)
+            max_length = 0
+            for neighbor in self.graph.successors(current_node):
+                if self.graph[current_node][neighbor]['type'] == 'isChildOf' and neighbor not in visited:
+                    length = dfs(neighbor, visited)
+                    max_length = max(max_length, length)
+            visited.remove(current_node)
+            return max_length + 1
+        longest_chain = 0
+        for node in self.graph.nodes():
+            chain_length = dfs(node, set())
+            longest_chain = max(longest_chain, chain_length)
+        return longest_chain
+    # Add a level attribute to each node indicating its generation level.
+    def assign_generation_levels(self, debug=False):
+        # Recursive function to assign levels
+        def assign_level(node_id, level):
+            if debug:
+                print(f"DEBUG: Assigning level {level} to node {node_id} ({self.graph.nodes[node_id].get('firstname', '')} {self.graph.nodes[node_id].get('lastname', '')})")
+            self.graph.nodes[node_id]['level'] = level                      # This marks the node as visited
+            # Look for neighbors with outgoing edges (successors): parents (isChildOf) and spouses
+            for neighbor in self.graph.successors(node_id):
+                if self.graph[node_id][neighbor]['type'] == 'isChildOf':
+                    if 'level' not in self.graph.nodes[neighbor]:
+                        assign_level(neighbor, level - 1)
+                elif self.graph[node_id][neighbor]['type'] == 'isSpouseOf':
+                    if 'level' not in self.graph.nodes[neighbor]:
+                        assign_level(neighbor, level)
+            # Look for neighbors with incoming edges (predecessors): children and spouses
+            for neighbor in self.graph.predecessors(node_id):
+                if self.graph[neighbor][node_id]['type'] == 'isChildOf':
+                    if 'level' not in self.graph.nodes[neighbor]:
+                        assign_level(neighbor, level + 1)
+                elif self.graph[neighbor][node_id]['type'] == 'isSpouseOf':     # Although this shouldnt be required, since the isSpouseOf relationship is bidirectional
+                    if 'level' not in self.graph.nodes[neighbor]:
+                        assign_level(neighbor, level)
+        # Start from any node, from example, the first one, and assign levels recursively to all its neighbors
+        if len(self.graph.nodes) > 0:
+            # Take the first node as root
+            root_node_id = list(self.graph.nodes)[0]
+        else:
+            root_node_id = None
+        if root_node_id:
+            assign_level(root_node_id, 0)
+            # Get the minimum level assigned
+            min_level = min((data['level'] for node, data in self.graph.nodes(data=True) if 'level' in data), default=None)
+            if min_level != 0:
+                # Increase all levels by the negative value of min_level to make the lowest level 0
+                for node in self.graph.nodes():
+                    if 'level' in self.graph.nodes[node]:
+                        self.graph.nodes[node]['level'] += -1 * min_level
+
     ###############
     #     Get     #
     ###############
@@ -336,6 +412,22 @@ class FamilyTree:
             if neighbors[i]['type'] == 'isSpouseOf':
                 spouse_ids.append(i)
         return spouse_ids
+    # For all nodes of type 'person' return a list containing a combination of their first and last names, if they exist
+    def get_person_list(self):
+        # return [ (node, self.graph.nodes[node].get('firstname', '') + ' ' + self.graph.nodes[node].get('lastname', '')).strip()
+        person_list = []
+        for node in self.graph.nodes():
+            full_name = (self.graph.nodes[node].get('firstname', '') + ' ' + self.graph.nodes[node].get('lastname', '')).strip()
+            if len(full_name) > 0:
+                person_list.append(full_name)
+        return person_list
+    # Get a node matching a full name (first + last name)
+    def get_person_by_full_name(self, full_name):
+        for node in self.graph.nodes():
+            node_full_name = (self.graph.nodes[node].get('firstname', '') + ' ' + self.graph.nodes[node].get('lastname', '')).strip()
+            if node_full_name.lower() == full_name.lower():
+                return node
+        return None
     def format_for_st_link_analysis(self):
         nodes = []
         edges = []
@@ -357,6 +449,12 @@ class FamilyTree:
     ###############
     #   Pictures  #
     ###############
+    def add_profile_picture(self, person_id, picture_url):
+        if person_id not in self.graph:
+            raise ValueError("Person must be in the family tree")
+        self.graph.nodes[person_id]["profilepic"] = picture_url
+        if self.autosave:
+            self.save()
     def add_picture(self, person_id, picture_url):
         if person_id not in self.graph:
             raise ValueError("Person must be in the family tree")
