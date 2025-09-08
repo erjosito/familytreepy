@@ -29,19 +29,13 @@ def show_pyvis(user_role='user'):
     left, center, right = st.columns(3)
     person_list = tree.get_person_list()
     person_list.sort()
-    # st.write(len(person_list), "people found in the family tree.")    # DEBUG
     selected_node_id = None
     with left:
         selected_person = st.selectbox("Select a person to center the graph on (optional):", options=[""] + person_list)
         if selected_person:
             selected_node_id = tree.get_person_by_full_name(selected_person)
-            # if selected_node_id:
-            #     st.write(f"Centering graph on: {selected_person} (ID: {selected_node_id})")
-            # else:
-            #     st.write(f"Person '{selected_person}' not found in the tree.")
     with right:
         degree = st.slider("Select graph degree (number of relationship hops from center person):", min_value=1, max_value=5, value=2, step=1)
-
     subgraph = None
     if selected_person and selected_node_id:
         subgraph = tree.get_subgraph_degrees(selected_node_id, degree=degree)

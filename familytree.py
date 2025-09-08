@@ -428,15 +428,24 @@ class FamilyTree:
             if node_full_name.lower() == full_name.lower():
                 return node
         return None
-    def format_for_st_link_analysis(self):
+    # Return a (sub)graph formatted for representation with the Streamlit Link Analysis library
+    def format_for_st_link_analysis(self, root_id=None, degree=None):
         nodes = []
         edges = []
-        for person_id, person_data in self.graph.nodes(data=True):
+        # Optionally filter the graph to a subgraph centered on root_id within 'degree' hops
+        if root_id and degree:
+            subgraph = self.get_subgraph_degrees(root_id, degree=degree)
+        else:
+            subgraph = self.graph
+        # Build the nodes and edges lists in a dictionary format
+        for person_id, person_data in subgraph.nodes(data=True):
             person = person_data
             person["id"] = person_id
             person["label"] = "person"
+            person["fullname"] = (person.get('firstname', '') + ' ' + person.get('lastname', '')).strip()
+            person["fullname_linebreaks"] = person["fullname"].replace(' ', '\n')
             nodes.append({"data": person})
-        for source, target, edge_data in self.graph.edges(data=True):
+        for source, target, edge_data in subgraph.edges(data=True):
             edges.append({
                 "data": {
                     "id": source + "to" + target,

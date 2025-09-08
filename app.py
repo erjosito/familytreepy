@@ -63,7 +63,7 @@ options = {
 page = st_navbar(
     pages,
     logo_path=logo_path,
-    styles=styles,
+    # styles=styles,
     options=options
 )
 functions = {

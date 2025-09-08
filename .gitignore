@@ -1,2 +1,5 @@
 .streamlit/secrets.toml
 .streamlit/secretsazure.toml
+pages/__pycache__/
+__pycache__/
+lib/

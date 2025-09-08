@@ -22,8 +22,8 @@ def upload_to_azure_storage(file, account_name=None, container_name=None, accoun
     return blob_url
 
 # Updates the object used by the graph representation
-def refresh_tree(tree):
-    tree_st = tree.format_for_st_link_analysis()
+def refresh_tree(tree, root_id=None, degrees=None):
+    tree_st = tree.format_for_st_link_analysis(root_id=root_id, degree=degrees)
     st.session_state.graph = tree_st
     elements = st.session_state.graph
 
@@ -55,8 +55,24 @@ def show_st_link_analysis(user_role='user'):
     # tree = FamilyTree(backend='local', localfile='C:\\Users\\jomore\\Downloads\\familytree.gml')
     tree = FamilyTree(backend='azstorage', azstorage_account=azure_storage_account, azstorage_key=azure_storage_key, azstorage_container="familytreejson", azstorage_blob='familytree.gml')
 
+    # Graph filter
+    left, right = st.columns(2)
+    person_list = tree.get_person_list()
+    person_list.sort()
+    selected_root_id = None
+    with left:
+        selected_root_person = st.selectbox("Select a person to center the graph on (optional):", options=[""] + person_list)
+        if selected_root_person:
+            selected_root_id = tree.get_person_by_full_name(selected_root_person)
+    with right:
+        degree = st.slider("Select graph degree (number of relationship hops from center person):", min_value=1, max_value=5, value=2, step=1)
+
     # Generate a Streamlit-compatible representation of the graph
-    tree_st = tree.format_for_st_link_analysis()
+    if selected_root_id:
+        tree_st = tree.format_for_st_link_analysis(root_id=selected_root_id, degree=degree)
+        # st.rerun()
+    else:
+        tree_st = tree.format_for_st_link_analysis()
 
     # Required for graph interaction
     LAYOUT_NAMES = list(LAYOUTS.keys())
@@ -65,15 +81,19 @@ def show_st_link_analysis(user_role='user'):
     if not hasattr(st.session_state, "graph"):
         st.session_state.graph = tree_st
     node_styles = [
-        NodeStyle("person", "#FF7F3E", "name", "person"),
+        NodeStyle(label="person", caption="fullname", icon="person", color="#FF7F3E"),
     ]
     edge_styles = [
-        EdgeStyle("isChildOf", caption='label', directed=True),
-        EdgeStyle("isSpouseOf", caption='label', directed=True)
+        EdgeStyle(label="isChildOf", caption='none', directed=True, color="red"),
+        EdgeStyle(label="isSpouseOf", caption='none', directed=True, color="blue"),
     ]
 
-    layout = st.selectbox("Choose the graph layout for the tree representation:", LAYOUT_NAMES, index=0)
+    layout = left.selectbox("Choose the graph layout for the tree representation:", LAYOUT_NAMES, index=0)
     # layout = {"name": "cose", "animate": "end", "nodeDimensionsIncludeLabels": False}
+
+    # DEBUG
+    refresh_tree(tree, root_id=selected_root_id, degrees=degree)
+    # st.write("The session state graph has " + str(len(st.session_state.graph['nodes'])) + " nodes, the subgraph has " + str(len(tree_st['nodes'])) + " nodes.")
 
     elements = st.session_state.graph
     with st.container(border=True):
@@ -126,7 +146,7 @@ def show_st_link_analysis(user_role='user'):
                             attributes['deathdate'] = str(deathdate)
                         tree.add_child(selected_node_id, **attributes)
                         addchildcontainer.empty()
-                        refresh_tree(tree)
+                        refresh_tree(tree, root_id=selected_root_id, degrees=degree)
                         st.rerun()
             ##################
             #   Add spouse   #
@@ -171,7 +191,7 @@ def show_st_link_analysis(user_role='user'):
                             attributes['deathdate'] = str(deathdate)
                         tree.add_spouse(selected_node_id, **attributes)
                         addspousecontainer.empty()
-                        refresh_tree(tree)
+                        refresh_tree(tree, root_id=selected_root_id, degrees=degree)
                         st.rerun()
             ##################
             #   Add parent   #
@@ -216,7 +236,7 @@ def show_st_link_analysis(user_role='user'):
                             attributes['deathdate'] = str(deathdate)
                         tree.add_parent(selected_node_id, **attributes)
                         addparentcontainer.empty()
-                        refresh_tree(tree)
+                        refresh_tree(tree, root_id=selected_root_id, degrees=degree)
                         st.rerun()
             ############
             #   Edit   #
@@ -279,7 +299,7 @@ def show_st_link_analysis(user_role='user'):
                             if (not isAlive) and (deathdate != default_deathdate):
                                 tree.update_person(selected_node_id, deathdate=str(deathdate))
                             editpersoncontainer.empty()
-                            refresh_tree(tree)
+                            refresh_tree(tree, root_id=selected_root_id, degrees=degree)
                             st.rerun()
                     else:
                         st.write("No node found for " + selected_node_id)
@@ -297,7 +317,7 @@ def show_st_link_analysis(user_role='user'):
                     if col52.button("Yes, delete", key="delete_ok"):
                         tree.delete_person(selected_node_id)
                         deletepersoncontainer.empty()
-                        refresh_tree(tree)
+                        refresh_tree(tree, root_id=selected_root_id, degrees=degree)
                         st.rerun()
             ###############
             # Add picture #
