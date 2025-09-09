@@ -38,6 +38,7 @@ def onchange_callback():
     #     st.write(val["data"]["node_ids"])
     selected_nodes = val["data"]["node_ids"]
 
+@st.fragment
 def show_st_link_analysis(user_role='user'):
     # Verify authentication
     st.header(f"Welcome, {st.user.name}!")
@@ -70,7 +71,7 @@ def show_st_link_analysis(user_role='user'):
     # Generate a Streamlit-compatible representation of the graph
     if selected_root_id:
         tree_st = tree.format_for_st_link_analysis(root_id=selected_root_id, degree=degree)
-        # st.rerun()
+        # st.rerun(scope="fragment")
     else:
         tree_st = tree.format_for_st_link_analysis()
 
@@ -101,291 +102,241 @@ def show_st_link_analysis(user_role='user'):
         if vals:
             selected_node_id = vals['data']['node_ids'][0]
             selected_node = tree.get_person(selected_node_id)
-            st.write("Selected ID: " + str(selected_node_id))
-            col1, col2, col3, col4, col5 = st.columns(5)
-            #################
-            #   Add child   #
-            #################
-            addchildcontainer = col1.empty()
-            with addchildcontainer.container():
-                with st.popover(label="Add child"):
-                    st.write("Adding child to " + selected_node_id)
-                    default_firstname = ""
-                    default_lastname = ""
-                    default_birthdate = None
-                    default_birthplace = ""
-                    default_isAlive = True
-                    default_deathdate = None
-                    firstname = st.text_input("First name", value=default_firstname, key='addchild_firstname')
-                    lastname = st.text_input("Last name", value=default_lastname, key='addchild_lastname')
-                    birthdate = st.date_input("Select a date", value=default_birthdate, min_value='1700-01-01', key="addchild_birthdate")
-                    birthplace = st.text_input("Birthplace", value=default_birthplace, key='addchild_birthplace')
-                    isAlive = st.checkbox("Is alive", value=default_isAlive, key="addchild_isalive")
-                    if not isAlive:
-                        deathdate = st.date_input("Select a date", value=default_deathdate, min_value='1700-01-01', key="addchild_deathdate")
-                    col11, col12 = st.columns(2)
-                    if col11.button("Cancel", key="addchild_cancel"):
-                        addchildcontainer.empty()
-                        st.rerun()
-                    if col12.button("OK", key="addchild_ok"):
-                        if isAlive:
-                            deathdate = None
-                        # Attributes initialized with the isAlive property, everything else is optional
-                        attributes = {
-                            'isAlive': isAlive
-                        }
-                        if firstname != default_firstname:
-                            attributes['firstname'] = firstname
-                        if lastname != default_lastname:
-                            attributes['lastname'] = lastname
-                        if birthdate != default_birthdate:
-                            attributes['birthdate'] = str(birthdate)
-                        if birthplace != default_birthplace:
-                            attributes['birthplace'] = birthplace
-                        if (not isAlive) and (deathdate != default_deathdate):
-                            attributes['deathdate'] = str(deathdate)
-                        tree.add_child(selected_node_id, **attributes)
-                        addchildcontainer.empty()
-                        refresh_tree(tree, root_id=selected_root_id, degrees=degree)
-                        st.rerun()
-            ##################
-            #   Add spouse   #
-            ##################
-            addspousecontainer = col2.empty()
-            with addspousecontainer.container():
-                with st.popover(label="Add spouse"):
-                    st.write("Adding spouse to " + selected_node_id)
-                    default_firstname = ""
-                    default_lastname = ""
-                    default_birthdate = None
-                    default_birthplace = ""
-                    default_isAlive = True
-                    default_deathdate = None
-                    firstname = st.text_input("First name", value=default_firstname, key='addspouse_firstname')
-                    lastname = st.text_input("Last name", value=default_lastname, key='addspouse_lastname')
-                    birthdate = st.date_input("Select a date", value=default_birthdate, min_value='1700-01-01', key="addspouse_birthdate")
-                    birthplace = st.text_input("Birthplace", value=default_birthplace, key='addspouse_birthplace')
-                    isAlive = st.checkbox("Is alive", value=default_isAlive, key="addspouse_isalive")
-                    if not isAlive:
-                        deathdate = st.date_input("Select a date", value=default_deathdate, min_value='1700-01-01', key="addspouse_deathdate")
-                    col21, col22 = st.columns(2)
-                    if col21.button("Cancel", key="addspouse_cancel"):
-                        addspousecontainer.empty()
-                        st.rerun()
-                    if col22.button("OK", key="addspouse_ok"):
-                        if isAlive:
-                            deathdate = None
-                        # Attributes initialized with the isAlive property, everything else is optional
-                        attributes = {
-                            'isAlive': isAlive
-                        }
-                        if firstname != default_firstname:
-                            attributes['firstname'] = firstname
-                        if lastname != default_lastname:
-                            attributes['lastname'] = lastname
-                        if birthdate != default_birthdate:
-                            attributes['birthdate'] = str(birthdate)
-                        if birthplace != default_birthplace:
-                            attributes['birthplace'] = birthplace
-                        if (not isAlive) and (deathdate != default_deathdate):
-                            attributes['deathdate'] = str(deathdate)
-                        tree.add_spouse(selected_node_id, **attributes)
-                        addspousecontainer.empty()
-                        refresh_tree(tree, root_id=selected_root_id, degrees=degree)
-                        st.rerun()
-            ##################
-            #   Add parent   #
-            ##################
-            addparentcontainer = col3.empty()
-            with addparentcontainer.container():
-                with st.popover(label="Add parent"):
-                    st.write("Adding parent to " + selected_node_id)
-                    default_firstname = ""
-                    default_lastname = ""
-                    default_birthdate = None
-                    default_birthplace = ""
-                    default_isAlive = True
-                    default_deathdate = None
-                    firstname = st.text_input("First name", value=default_firstname, key='addparent_firstname')
-                    lastname = st.text_input("Last name", value=default_lastname, key='addparent_lastname')
-                    birthdate = st.date_input("Select a date", value=default_birthdate, min_value='1700-01-01', key="addparent_birthdate")
-                    birthplace = st.text_input("Birthplace", value=default_birthplace, key='addparent_birthplace')
-                    isAlive = st.checkbox("Is alive", value=default_isAlive, key="addparent_isalive")
-                    if not isAlive:
-                        deathdate = st.date_input("Select a date", value=default_deathdate, min_value='1700-01-01', key="addparent_deathdate")
-                    col31, col32 = st.columns(2)
-                    if col31.button("Cancel", key="addparent_cancel"):
-                        addparentcontainer.empty()
-                        st.rerun()
-                    if col32.button("OK", key="addparent_ok"):
-                        if isAlive:
-                            deathdate = None
-                        # Attributes initialized with the isAlive property, everything else is optional
-                        attributes = {
-                            'isAlive': isAlive
-                        }
-                        if firstname != default_firstname:
-                            attributes['firstname'] = firstname
-                        if lastname != default_lastname:
-                            attributes['lastname'] = lastname
-                        if birthdate != default_birthdate:
-                            attributes['birthdate'] = str(birthdate)
-                        if birthplace != default_birthplace:
-                            attributes['birthplace'] = birthplace
-                        if (not isAlive) and (deathdate != default_deathdate):
-                            attributes['deathdate'] = str(deathdate)
-                        tree.add_parent(selected_node_id, **attributes)
-                        addparentcontainer.empty()
-                        refresh_tree(tree, root_id=selected_root_id, degrees=degree)
-                        st.rerun()
-            ############
-            #   Edit   #
-            ############
-            editpersoncontainer = col4.empty()
-            with editpersoncontainer.container():
-                with st.popover(label="Edit"):
-                    st.write("Editing " + selected_node_id)
-                    if selected_node:
-                        date_format = "%a %b %d %Y"
-                        if "firstname" in selected_node:
-                            default_firstname = selected_node['firstname']
-                        else:
-                            default_firstname = ""
-                        if "lastname" in selected_node:
-                            default_lastname = selected_node['lastname']
-                        else:
-                            default_lastname = ""
-                        if "birthdate" in selected_node and len(selected_node['birthdate']) > 0:
-                            try:
-                                default_birthdate = datetime.datetime.strptime(selected_node['birthdate'], date_format).date()
-                            except:
-                                default_birthdate = datetime.date.today()  # In case the string cannot be converted to a date
-                        else:
+
+            st.write("Selected person:", selected_node.get('firstname', ""), selected_node.get('lastname', "") + " (ID: " + str(selected_node_id) + ")")
+            # Dropdown for operation selection
+            operation = st.selectbox(
+                "Select operation:",
+                [
+                    "",
+                    "Add child",
+                    "Add spouse",
+                    "Add parent",
+                    "Edit",
+                    "Delete",
+                    "Add profile picture",
+                    "Add picture",
+                    "View profile picture",
+                    "View pictures"
+                ],
+                key="operation_select"
+            )
+
+            if operation == "Add child":
+                st.write("Adding child to", selected_node.get('firstname', ""), selected_node.get('lastname', ""))
+                default_firstname = ""
+                default_lastname = ""
+                default_birthdate = None
+                default_birthplace = ""
+                default_isAlive = True
+                default_deathdate = None
+                firstname = st.text_input("First name", value=default_firstname, key='addchild_firstname')
+                lastname = st.text_input("Last name", value=default_lastname, key='addchild_lastname')
+                birthdate = st.date_input("Select a date", value=default_birthdate, min_value='1700-01-01', key="addchild_birthdate")
+                birthplace = st.text_input("Birthplace", value=default_birthplace, key='addchild_birthplace')
+                isAlive = st.checkbox("Is alive", value=default_isAlive, key="addchild_isalive")
+                if not isAlive:
+                    deathdate = st.date_input("Select a date", value=default_deathdate, min_value='1700-01-01', key="addchild_deathdate")
+                col11, col12 = st.columns(2)
+                # if col11.button("Cancel", key="addchild_cancel"):
+                #     st.rerun(scope="fragment")
+                if col12.button("Add child", key="addchild_ok"):
+                    if isAlive:
+                        deathdate = None
+                    attributes = {'isAlive': isAlive}
+                    if firstname != default_firstname:
+                        attributes['firstname'] = firstname
+                    if lastname != default_lastname:
+                        attributes['lastname'] = lastname
+                    if birthdate != default_birthdate:
+                        attributes['birthdate'] = str(birthdate)
+                    if birthplace != default_birthplace:
+                        attributes['birthplace'] = birthplace
+                    if (not isAlive) and (deathdate != default_deathdate):
+                        attributes['deathdate'] = str(deathdate)
+                    tree.add_child(selected_node_id, **attributes)
+                    refresh_tree(tree, root_id=selected_root_id, degrees=degree)
+                    st.rerun(scope="fragment")
+            elif operation == "Add spouse":
+                st.write("Adding spouse to", selected_node.get('firstname', ""), selected_node.get('lastname', ""))
+                default_firstname = ""
+                default_lastname = ""
+                default_birthdate = None
+                default_birthplace = ""
+                default_isAlive = True
+                default_deathdate = None
+                firstname = st.text_input("First name", value=default_firstname, key='addspouse_firstname')
+                lastname = st.text_input("Last name", value=default_lastname, key='addspouse_lastname')
+                birthdate = st.date_input("Select a date", value=default_birthdate, min_value='1700-01-01', key="addspouse_birthdate")
+                birthplace = st.text_input("Birthplace", value=default_birthplace, key='addspouse_birthplace')
+                isAlive = st.checkbox("Is alive", value=default_isAlive, key="addspouse_isalive")
+                if not isAlive:
+                    deathdate = st.date_input("Select a date", value=default_deathdate, min_value='1700-01-01', key="addspouse_deathdate")
+                col21, col22 = st.columns(2)
+                # if col21.button("Cancel", key="addspouse_cancel"):
+                #     st.rerun(scope="fragment")
+                if col22.button("Add spouse", key="addspouse_ok"):
+                    if isAlive:
+                        deathdate = None
+                    attributes = {'isAlive': isAlive}
+                    if firstname != default_firstname:
+                        attributes['firstname'] = firstname
+                    if lastname != default_lastname:
+                        attributes['lastname'] = lastname
+                    if birthdate != default_birthdate:
+                        attributes['birthdate'] = str(birthdate)
+                    if birthplace != default_birthplace:
+                        attributes['birthplace'] = birthplace
+                    if (not isAlive) and (deathdate != default_deathdate):
+                        attributes['deathdate'] = str(deathdate)
+                    tree.add_spouse(selected_node_id, **attributes)
+                    refresh_tree(tree, root_id=selected_root_id, degrees=degree)
+                    st.rerun(scope="fragment")
+            elif operation == "Add parent":
+                st.write("Adding parent to", selected_node.get('firstname', ""), selected_node.get('lastname', ""))
+                default_firstname = ""
+                default_lastname = ""
+                default_birthdate = None
+                default_birthplace = ""
+                default_isAlive = True
+                default_deathdate = None
+                firstname = st.text_input("First name", value=default_firstname, key='addparent_firstname')
+                lastname = st.text_input("Last name", value=default_lastname, key='addparent_lastname')
+                birthdate = st.date_input("Select a date", value=default_birthdate, min_value='1700-01-01', key="addparent_birthdate")
+                birthplace = st.text_input("Birthplace", value=default_birthplace, key='addparent_birthplace')
+                isAlive = st.checkbox("Is alive", value=default_isAlive, key="addparent_isalive")
+                if not isAlive:
+                    deathdate = st.date_input("Select a date", value=default_deathdate, min_value='1700-01-01', key="addparent_deathdate")
+                col31, col32 = st.columns(2)
+                # if col31.button("Cancel", key="addparent_cancel"):
+                #     st.rerun(scope="fragment")
+                if col32.button("Add parent", key="addparent_ok"):
+                    if isAlive:
+                        deathdate = None
+                    attributes = {'isAlive': isAlive}
+                    if firstname != default_firstname:
+                        attributes['firstname'] = firstname
+                    if lastname != default_lastname:
+                        attributes['lastname'] = lastname
+                    if birthdate != default_birthdate:
+                        attributes['birthdate'] = str(birthdate)
+                    if birthplace != default_birthplace:
+                        attributes['birthplace'] = birthplace
+                    if (not isAlive) and (deathdate != default_deathdate):
+                        attributes['deathdate'] = str(deathdate)
+                    tree.add_parent(selected_node_id, **attributes)
+                    refresh_tree(tree, root_id=selected_root_id, degrees=degree)
+                    st.rerun(scope="fragment")
+            elif operation == "Edit":
+                st.write("Editing", selected_node.get('firstname', ""), selected_node.get('lastname', ""))
+                if selected_node:
+                    date_format = "%a %b %d %Y"
+                    default_firstname = selected_node.get('firstname', "")
+                    default_lastname = selected_node.get('lastname', "")
+                    if "birthdate" in selected_node and len(selected_node['birthdate']) > 0:
+                        try:
+                            default_birthdate = datetime.datetime.strptime(selected_node['birthdate'], date_format).date()
+                        except:
                             default_birthdate = datetime.date.today()
-                        if "birthplace" in selected_node:
-                            default_birthplace = selected_node['birthplace']
-                        else:
-                            default_birthplace = ""
-                        if "isAlive" in selected_node:
-                            default_isAlive = selected_node['isAlive']
-                        else:
-                            default_isAlive = True
-                        if "deathdate" in selected_node and len(selected_node['deathdate']) > 0:
-                            default_deathdate = datetime.datetime.strptime(selected_node['deathdate'], date_format).date()
-                        else:
-                            default_deathdate = datetime.date.today()
-                        firstname = st.text_input("First name", value=default_firstname, key='edit_firstname')
-                        lastname = st.text_input("Last name", value=default_lastname, key='edit_lastname')
-                        birthdate = st.date_input("Select a date", value=default_birthdate, key="edit_birthdate", min_value='1700-01-01')
-                        birthplace = st.text_input("Birthplace", value=default_birthplace, key='edit_birthplace')
-                        isAlive = st.checkbox("Is alive", value=default_isAlive, key="edit_isalive")
-                        if not isAlive:
-                            deathdate = st.date_input("Select a date", value=default_deathdate, min_value='1700-01-01', key="edit_deathdate")
-                        col41, col42 = st.columns(2)
-                        if col41.button("Cancel", key="edit_cancel"):
-                            editpersoncontainer.empty()
-                            st.rerun()
-                        if col42.button("OK", key="edit_ok"):
-                            if isAlive:
-                                deathdate = None
-                            if firstname != default_firstname:
-                                tree.update_person(selected_node_id, firstname=firstname)
-                            if lastname != default_lastname:
-                                tree.update_person(selected_node_id, lastname=lastname)
-                            if birthdate != default_birthdate:
-                                tree.update_person(selected_node_id, birthdate=str(birthdate))
-                            if birthplace != default_birthplace:
-                                tree.update_person(selected_node_id, birthplace=birthplace)
-                            if (not isAlive) and (deathdate != default_deathdate):
-                                tree.update_person(selected_node_id, deathdate=str(deathdate))
-                            editpersoncontainer.empty()
-                            refresh_tree(tree, root_id=selected_root_id, degrees=degree)
-                            st.rerun()
                     else:
-                        st.write("No node found for " + selected_node_id)
-            ##############
-            #   Delete   #
-            ##############
-            deletepersoncontainer = col5.empty()
-            with deletepersoncontainer.container():
-                with st.popover(label="Delete"):
-                    st.write("Delete " + selected_node_id + "?")
-                    col51, col52 = st.columns(2)
-                    if col51.button("Cancel", key="delete_cancel"):
-                        deletepersoncontainer.empty()
-                        st.rerun()
-                    if col52.button("Yes, delete", key="delete_ok"):
-                        tree.delete_person(selected_node_id)
-                        deletepersoncontainer.empty()
+                        default_birthdate = datetime.date.today()
+                    default_birthplace = selected_node.get('birthplace', "")
+                    default_isAlive = selected_node.get('isAlive', True)
+                    if "deathdate" in selected_node and len(selected_node['deathdate']) > 0:
+                        default_deathdate = datetime.datetime.strptime(selected_node['deathdate'], date_format).date()
+                    else:
+                        default_deathdate = datetime.date.today()
+                    firstname = st.text_input("First name", value=default_firstname, key='edit_firstname')
+                    lastname = st.text_input("Last name", value=default_lastname, key='edit_lastname')
+                    birthdate = st.date_input("Select a date", value=default_birthdate, key="edit_birthdate", min_value='1700-01-01')
+                    birthplace = st.text_input("Birthplace", value=default_birthplace, key='edit_birthplace')
+                    isAlive = st.checkbox("Is alive", value=default_isAlive, key="edit_isalive")
+                    if not isAlive:
+                        deathdate = st.date_input("Select a date", value=default_deathdate, min_value='1700-01-01', key="edit_deathdate")
+                    col41, col42 = st.columns(2)
+                    # if col41.button("Cancel", key="edit_cancel"):
+                    #     # st.rerun(scope="fragment")
+                    #     pass
+                    if st.button("Save changes", key="edit_ok"):
+                        if isAlive:
+                            deathdate = None
+                        if firstname != default_firstname:
+                            tree.update_person(selected_node_id, firstname=firstname)
+                        if lastname != default_lastname:
+                            tree.update_person(selected_node_id, lastname=lastname)
+                        if birthdate != default_birthdate:
+                            tree.update_person(selected_node_id, birthdate=str(birthdate))
+                        if birthplace != default_birthplace:
+                            tree.update_person(selected_node_id, birthplace=birthplace)
+                        if (not isAlive) and (deathdate != default_deathdate):
+                            tree.update_person(selected_node_id, deathdate=str(deathdate))
                         refresh_tree(tree, root_id=selected_root_id, degrees=degree)
-                        st.rerun()
-            ###############
-            # Add picture #
-            ###############
-            addprofilepiccontainer = col1.empty()
-            with addprofilepiccontainer.container():
-                with st.popover(label="Add profile picture"):
-                    st.write("Select picture file to add to " + selected_node_id)
-                    uploaded_file = st.file_uploader("Choose a picture", type=["png", "jpg"], key="addprofilepic_uploader")
-                    col61, col62 = st.columns(2)
-                    if col61.button("Cancel", key="addprofilepic_cancel"):
-                        addprofilepiccontainer.empty()
-                        st.rerun()
-                    if col62.button("OK", key="addprofilepic_ok"):
-                        if uploaded_file is not None:
-                            # Upload to Azure Storage
-                            picture_url = upload_to_azure_storage(uploaded_file, azure_storage_account, azure_storage_container, azure_storage_key)
-                            tree.add_profile_picture(selected_node_id, picture_url)
-                        addprofilepiccontainer.empty()
-                        st.rerun()
-            addpiccontainer = col2.empty()
-            with addpiccontainer.container():
-                with st.popover(label="Add picture"):
-                    st.write("Select picture file to add to " + selected_node_id)
-                    uploaded_file = st.file_uploader("Choose a picture", type=["png", "jpg"], key="addpic_uploader")
-                    col71, col72 = st.columns(2)
-                    if col71.button("Cancel", key="addpic_cancel"):
-                        addpiccontainer.empty()
-                        st.rerun()
-                    if col72.button("OK", key="addpic_ok"):
-                        if uploaded_file is not None:
-                            # Upload to Azure Storage
-                            picture_url = upload_to_azure_storage(uploaded_file, azure_storage_account, azure_storage_container, azure_storage_key)
-                            tree.add_picture(selected_node_id, picture_url)
-                        addpiccontainer.empty()
-                        st.rerun()
-            #################
-            # View pictures #
-            #################
-            viewprofilepiccontainer = col1.empty()
-            with viewprofilepiccontainer.container():
-                with st.popover(label="View profile picture"):
-                    st.write("Profile picture for " + selected_node_id)
-                    if selected_node:
-                        picture_url = selected_node.get('profilepic', None)
-                        if picture_url:
-                            picture_url = picture_url + "?" + azure_storage_sas
-                            st.image(picture_url, width=50)
-                        else:
-                            st.write("No profile picture found")
-                    if st.button("Close", key="viewprofilepic_cancel"):
-                        viewprofilepiccontainer.empty()
-                        st.rerun()
-            viewpiccontainer = col2.empty()
-            with viewpiccontainer.container():
-                with st.popover(label="View pictures"):
-                    st.write("Pictures for " + selected_node_id)
-                    if selected_node:
-                        if 'pictures' in selected_node:
-                            sas_links = [x + "?" + azure_storage_sas for x in selected_node['pictures']]
-                            # for picture_url in sas_links:
-                            #     st.write(picture_url)
-                            st.image(sas_links, width=200)
-                        else:
-                            st.write("No pictures found")
-                    if st.button("Close", key="viewpic_cancel"):
-                        viewpiccontainer.empty()
-                        st.rerun()
+                        st.rerun(scope="fragment")
+                else:
+                    st.write("No node found for " + selected_node_id)
+            elif operation == "Delete":
+                st.write("Delete person ", selected_node.get('firstname', ""), selected_node.get('lastname', ""), "?")
+                col51, col52 = st.columns(2)
+                if col51.button("Cancel", key="delete_cancel"):
+                    st.rerun(scope="fragment")
+                if col52.button("Yes, delete", key="delete_ok"):
+                    tree.delete_person(selected_node_id)
+                    refresh_tree(tree, root_id=selected_root_id, degrees=degree)
+                    st.rerun(scope="fragment")
+            elif operation == "Add profile picture":
+                if selected_node:
+                    picture_url = selected_node.get('profilepic', None)
+                    if picture_url:
+                        st.write("Profile picture for", selected_node.get('firstname', ""), selected_node.get('lastname', ""), ":")
+                        picture_url = picture_url + "?" + azure_storage_sas
+                        st.image(picture_url, width=50)
+                    else:
+                        st.write("No profile picture currently configured for", selected_node.get('firstname', ""), selected_node.get('lastname', ""))
+                st.write("Select picture file for", selected_node.get('firstname', ""), selected_node.get('lastname', ""))
+                uploaded_file = st.file_uploader("Choose a picture", type=["png", "jpg"], key="addprofilepic_uploader")
+                col61, col62 = st.columns(2)
+                # if col61.button("Cancel", key="addprofilepic_cancel"):
+                #     st.rerun(scope="fragment")
+                if st.button("Add profile picture", key="addprofilepic_ok"):
+                    if uploaded_file is not None:
+                        picture_url = upload_to_azure_storage(uploaded_file, azure_storage_account, azure_storage_container, azure_storage_key)
+                        tree.add_profile_picture(selected_node_id, picture_url)
+                    st.rerun(scope="fragment")
+            elif operation == "Add picture":
+                if selected_node:
+                    if 'pictures' in selected_node:
+                        st.write("Existing pictures for", selected_node.get('firstname', ""), selected_node.get('lastname', ""))
+                        sas_links = [x + "?" + azure_storage_sas for x in selected_node['pictures']]
+                        st.image(sas_links, width=200)
+                    else:
+                        st.write("No pictures linked to selected node yet.")
+                st.write("Select picture file to add to", selected_node.get('firstname', ""), selected_node.get('lastname', ""))
+                uploaded_file = st.file_uploader("Choose a picture", type=["png", "jpg"], key="addpic_uploader")
+                col71, col72 = st.columns(2)
+                # if col71.button("Cancel", key="addpic_cancel"):
+                #     st.rerun(scope="fragment")
+                if col72.button("Add picture", key="addpic_ok"):
+                    if uploaded_file is not None:
+                        picture_url = upload_to_azure_storage(uploaded_file, azure_storage_account, azure_storage_container, azure_storage_key)
+                        tree.add_picture(selected_node_id, picture_url)
+                    st.rerun(scope="fragment")
+            elif operation == "View profile picture":
+                st.write("Profile picture for " + selected_node_id)
+                if selected_node:
+                    picture_url = selected_node.get('profilepic', None)
+                    if picture_url:
+                        picture_url = picture_url + "?" + azure_storage_sas
+                        st.image(picture_url, width=50)
+                    else:
+                        st.write("No profile picture found")
+            elif operation == "View pictures":
+                st.write("Pictures for " + selected_node_id)
+                if selected_node:
+                    if 'pictures' in selected_node:
+                        sas_links = [x + "?" + azure_storage_sas for x in selected_node['pictures']]
+                        st.image(sas_links, width=200)
+                    else:
+                        st.write("No pictures found")
 
 
     # st_link_analysis(tree, node_styles=node_styles, edge_styles=edge_styles, layout=layout, key="xyz")
@@ -407,11 +358,11 @@ def show_st_link_analysis(user_role='user'):
             coll1, coll2 = st.columns(2)
             if coll1.button("Cancel", key="add_test_cancel"):
                 addtest_container.empty()
-                st.rerun()
+                st.rerun(scope="fragment")
             if coll2.button("Yes, add data", key="add_test_ok"):
                 tree.add_test_family()
                 addtest_container.empty()
-                st.rerun()
+                st.rerun(scope="fragment")
     # Delete all button with confirmation (using state would probably be cleaner)
     deleteall_container = middle.empty()
     with deleteall_container.container():
@@ -420,11 +371,11 @@ def show_st_link_analysis(user_role='user'):
             colm1, colm2 = st.columns(2)
             if colm1.button("Cancel", key="deleteall_cancel"):
                 deleteall_container.empty()
-                st.rerun()
+                st.rerun(scope="fragment")
             if colm2.button("Yes, delete all", key="deleteall_ok"):
                 tree.delete_all()
                 deleteall_container.empty()
-                st.rerun()
+                st.rerun(scope="fragment")
     # Import from file containing an export from the 3rd party app "Family Tree"
     import_container = right.empty()
     with import_container.container():
@@ -435,7 +386,7 @@ def show_st_link_analysis(user_role='user'):
             colr1, colr2 = st.columns(2)
             if colr1.button("Cancel", key="import_cancel"):
                 import_container.empty()
-                st.rerun()
+                st.rerun(scope="fragment")
             if colr2.button("Yes, import tree", key="import_ok"):
                 if len(import_picsfolder) > 0:
                     nodes_added = tree.import_from_app_json(
@@ -452,4 +403,4 @@ def show_st_link_analysis(user_role='user'):
                     )
                 st.write(f"Imported {nodes_added} nodes.")
                 import_container.empty()
-                st.rerun()
+                st.rerun(scope="fragment")

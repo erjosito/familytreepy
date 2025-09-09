@@ -20,9 +20,21 @@ longest_chain = tree.get_longest_ancestor_chain()
 print(f"Longest chain of ancestors: {longest_chain}")
 
 # Test setting levels
-tree.assign_generation_levels(debug=True)
+# tree.assign_generation_levels(debug=True)
+
+# Print out all people with their details in a table with fixed witdth columns
+print(f"{'ID':36} {'First Name':20} {'Last Name':20} {'Birth Year':10} {'Birthplace':20} {'Profile pic (Y/N)':20}")
+for person_id in tree.graph.nodes:
+    person = tree.graph.nodes[person_id]
+    if 'profilepic' in person and person['profilepic']:
+        profilepic_exists = 'Y'
+    else:
+        profilepic_exists = 'N'
+    print(f"{person_id:36} {person.get('firstname', ''):20} {person.get('lastname', ''):20} {person.get('birthyear', ''):10} {person.get('birthplace', ''):20} {profilepic_exists:20}")
 
 # Perform any modifications to the tree here
+# for person_id in tree.graph.nodes:
+#     person = tree.graph.nodes[person_id]
 
 # Save the updated tree back to Azure Storage
 #tree.save()

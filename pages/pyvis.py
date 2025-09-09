@@ -111,3 +111,33 @@ def show_pyvis(user_role='user'):
         return
     components.html(HtmlFile.read(), height=485)
 
+    # Button to create a larger image and offer link to download
+    if st.button("Generate high-resolution image"):
+        if selected_node_id and degree:
+            with st.spinner("Generating image..."):
+                try:
+                    temp_folder = tempfile.TemporaryDirectory()
+                    tree.generate_image(
+                        root_person_id=selected_node_id, degrees=degree, 
+                        canvas_width=1600, canvas_height=1200, 
+                        root_folder='./imagegen', image_path=temp_folder.name, image_filename='familytree.png', 
+                        azure_storage_sas=azure_storage_sas,
+                        verbose=True)
+                    im_path = os.path.join(temp_folder.name, 'familytree.png')
+                    im = plt.imread(im_path)
+                    plt.figure(figsize=(16,12))
+                    plt.imshow(im)
+                    plt.axis('off')  # Hide axes
+                    st.pyplot(plt)
+                    # Add download link for the image
+                    with open(im_path, "rb") as f:
+                        st.download_button(
+                            label="Download high-resolution image",
+                            data=f.read(),
+                            file_name="familytree.png",
+                            mime="image/png"
+                        )
+                except Exception as e:
+                    st.error(f"Error generating image: {e}")
+        else:
+            st.warning("Please select a person to center the graph on before generating an image.")

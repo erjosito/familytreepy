@@ -9,3 +9,6 @@ matplotlib
 networkx
 pyvis
 stvis
+pillow
+requests
+numpy
