@@ -19,8 +19,10 @@ COPY ./app.py ./
 COPY ./familytree.py ./
 RUN mkdir -p .streamlit
 RUN mkdir -p pages
+RUN mkdir -p imagegen
 COPY ./.streamlit/secretsazure.toml .streamlit/secrets.toml
 COPY ./pages/*.py pages/
+COPY ./imagegen/*.py imagegen/
 
 # Expose Streamlit default port
 EXPOSE 8501
