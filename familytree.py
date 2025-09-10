@@ -602,7 +602,26 @@ class FamilyTree:
                             families[family_id]['parents'].extend([person_id] + spouses)
                             families[family_id]['children'].extend(children)
             return graph, families
-
+        # Function that returns the IDs of the spouses of a person
+        # Used to place children without spouses to the left of the chart, to avoid crossing lines
+        def get_spouse_ids(graph, person_id):
+            spouse_ids = []
+            neighbors = graph.adj[person_id]
+            for i in neighbors:
+                if neighbors[i]['type'] == 'isSpouseOf':
+                    spouse_ids.append(i)
+            return spouse_ids
+        # Function that returns the IDs of the parents of the spouses of a person
+        # Used to place couples where the spouse has no uplinks to the left of the chart, to avoid crossing lines
+        def get_spouse_parents(graph, person_id):
+            parents = []
+            spouses = get_spouse_ids(graph, person_id)
+            for spouse in spouses:
+                spouse_parents = [neighbor for neighbor in graph.successors(spouse) if graph[spouse][neighbor]['type'] == 'isChildOf']
+                parents.extend(spouse_parents)
+            return parents
+        # This functions assigns the position in each vertical level (hlevel) to each person
+        # This function is critical to reduce the amount of crossing lines in the final image between parents and children
         def assign_hlevels(graph, vlevels=None, debug=False):
             # Recursive function to assign hlevels
             def assign_hlevel(node_id, hlevels):
@@ -616,11 +635,24 @@ class FamilyTree:
                         if not 'hlevel' in graph.nodes[neighbor]:
                             graph.nodes[neighbor]['hlevel'] = hlevels[graph.nodes[neighbor]['vlevel']]
                             hlevels[graph.nodes[neighbor]['vlevel']] += 1
-                # Start picking hlevels for the children
+                # Start picking hlevels for the children that have no spouses
                 for neighbor in graph.predecessors(node_id):
                     if graph[neighbor][node_id]['type'] == 'isChildOf':
-                        if not 'hlevel' in graph.nodes[neighbor]:
-                            hlevels = assign_hlevel(neighbor, hlevels)
+                        if len(get_spouse_ids(graph, neighbor)) == 0:
+                            if not 'hlevel' in graph.nodes[neighbor]:
+                                hlevels = assign_hlevel(neighbor, hlevels)
+                # Continue picking hlevels for the children whose spouses have no parents
+                for neighbor in graph.predecessors(node_id):
+                    if graph[neighbor][node_id]['type'] == 'isChildOf':
+                        if len(get_spouse_ids(graph, neighbor)) > 0 and len(get_spouse_parents(graph, neighbor)) == 0:
+                            if not 'hlevel' in graph.nodes[neighbor]:
+                                hlevels = assign_hlevel(neighbor, hlevels)
+                # Finally pick hlevels for the children whose spouses have parents
+                for neighbor in graph.predecessors(node_id):
+                    if graph[neighbor][node_id]['type'] == 'isChildOf':
+                        if len(get_spouse_ids(graph, neighbor)) > 0 and len(get_spouse_parents(graph, neighbor)) > 0:
+                            if not 'hlevel' in graph.nodes[neighbor]:
+                                hlevels = assign_hlevel(neighbor, hlevels)
                 # And for the parents
                 for neighbor in graph.predecessors(node_id):
                     if graph[neighbor][node_id]['type'] == 'isChildOf':
@@ -646,8 +678,6 @@ class FamilyTree:
                 print(f"DEBUG: Horizontal levels assigned: {hlevels}")
             return graph, hlevels
 
-
-
         # Load up tree from Azure Storage
         if root_person_id and degrees:
             subgraph = self.get_subgraph_degrees(root_person_id, degree=degrees)
@@ -662,19 +692,15 @@ class FamilyTree:
             print(f"DEBUG: Vertical levels: {vlevels}, Horizontal levels: {hlevels}")
             print(f"DEBUG: Families found: {len(families)}")
 
-        #####################################################################
-        # Image Generation
-        #####################################################################
-
-        # Canvas variables
+        # Image Generation - Canvas variables
         tempdir = tempfile.TemporaryDirectory()
         top_border = 0.05 # percent of height
         bottom_border = 0.05 # percent of height
         side_border = 0.05 # percent of width
         spacing_couple = 5
         spacing_siblings = 5
-        personpic_v_ratio = 0.6 # person picture height as ratio of level height
-        personpic_h_ratio = 0.6 # person picture width as ratio of level width
+        personpic_v_ratio = 0.4 # person picture height as percentage of level height
+        personpic_h_ratio = 0.4 # person picture width as percentage of level width
         min_spacing_family = 5
         pic_aspect_ratio = 1
         text_vert_fraction = 0.2
@@ -698,11 +724,17 @@ class FamilyTree:
         spouse_spacing_factor = 0.6 # Reduce the distance between spouses by this factor. The lower, the closer they get.
         vlevels_spacing_factor = 0.8
         hlevels_spacing_factor = 0.8
+        # So that the vertical lines between levels are not exactly in the middle of the level, to avoid crossing lines
+        parent_child_line_variability = 0.1
+        # Percentage of the vertical lines between parent and child that goes down from the parent picture before going horizontal
+        # The higher the value, the closer the line to the child's picture
+        parent_child_line_length_ratio = 0.7
         # Color matrix for lines
         color_matrix = [(255,0,0), (0,255,0), (0,0,255), (255,255,0), (255,0,255), (0,255,255), (128,0,0), (0,128,0), (0,0,128), (128,128,0), (128,0,128), (0,128,128)]
 
         # For each vertical level, take the smaller of the two dimensions to keep aspect ratio
         # If the height is much smaller, it means that we can use wide name plates instead of the wrapped names with line breaks
+        # The wide_nameplates variables are not used for now, we always use 2-line wrapped names 'firstname\nlastname' (aka partially wide nameplates)
         wide_nameplates = [False for _ in hlevel_widths]
         for i in range(len(personpic_ws)):
             if personpic_hs[i] < personpic_ws[i]:
@@ -774,7 +806,7 @@ class FamilyTree:
                         if verbose:
                             print(f"DEBUG: New positions are {subgraph.nodes[person_id]['pic_center']} and {subgraph.nodes[neighbor]['pic_center']}")
                         # Add as well a random offset so that horizontal lines to children are not overlapping with other families
-                        random_offset = random.randint(-5, 5)
+                        random_offset = random.randint(-100, 100)
                         subgraph.nodes[person_id]['offset'] = random_offset
                         subgraph.nodes[neighbor]['offset'] = random_offset
                         # Add the midpoint between the two spouses too
@@ -840,9 +872,11 @@ class FamilyTree:
                         parent_midpoint_x = subgraph.nodes[edge[1]]['spouses_midpoint_x']
                     else:
                         parent_midpoint_x = parent_center[0]
-                    vdistance = int(round((child_center[1] - parent_center[1])/2, 0))
+                    # Vertical distance to go down
+                    vdistance = int(round(parent_child_line_length_ratio * (child_center[1] - parent_center[1]), 0))
+                    # Offset is a percentage value that can go from -100 to +100, and it is applied to the vertical distance between parents and children
                     if 'offset' in subgraph.nodes[edge[1]]:
-                        vdistance += 10*subgraph.nodes[edge[1]]['offset']
+                        vdistance = vdistance * (1 + parent_child_line_variability * subgraph.nodes[edge[1]]['offset'] / 100)
                     # d.line([child_bottom, parent_top], fill=(0, 0, 0), width=2)
                     # We need to draw 3 lines:
                     # 1. Vertical line from the midpoint between the two parents centers to the bottom of the level
@@ -926,8 +960,9 @@ class FamilyTree:
             if 'profilepic' in person_data and azure_storage_sas:
                 pic_url = person_data['profilepic'] + "?"+ azure_storage_sas
                 pic_file = os.path.join(tempdir.name, os.path.basename(person_data['profilepic']))
-                if verbose:
-                    print(f"DEBUG: Downloading profile picture from {pic_url} to {pic_file}...")
+                # Don't show the SAS token in verbose/debug mode
+                # if verbose:
+                #     print(f"DEBUG: Downloading profile picture from {pic_url} to {pic_file}...")
                 # urllib.request.urlretrieve(pic_url, os.path.join(tempdir.name, os.path.basename(person_data['profilepic'])))
                 response = requests.get(pic_url)
                 with open(pic_file, "wb") as file:
@@ -997,9 +1032,20 @@ class FamilyTree:
                     # text_y = person_pic_topleft_y + text_vert_offset * personpic_h + personpic_h*text_vert_fraction
                     fontsize = int(personpic_h * text_vert_fraction * scale_down_ratio)
                 else:
+                    # This is the preferred schema, "partially wide nameplates"
                     # Use a 2-line text, firstname + \n + lastname
-                    text = person_data['firstname'] + '\n' + person_data['lastname']
-                    num_of_lines = 2
+                    text = ''
+                    if 'firstname' in person_data and len(person_data['firstname']) > 0:
+                        text += person_data['firstname']
+                    if 'lastname' in person_data and len(person_data['lastname']) > 0:
+                        if len(text) > 0:
+                            text += '\n'
+                        text += person_data['lastname']
+                    # Just in case there is no firstname or lastname, use 1 line
+                    if 'firstname' in person_data and 'lastname' in person_data and len(person_data['firstname']) > 0 and len(person_data['lastname']) > 0:
+                        num_of_lines = 2
+                    else:
+                        num_of_lines = 1
                     num_of_chars = max(len(person_data['firstname']), len(person_data['lastname']))
                     textframe_w = int(personpic_w * (1 + aframewratio) * num_of_chars / char_textframe_ratio)
                     # textframe_w = int(personpic_w * (1 + aframewratio))
