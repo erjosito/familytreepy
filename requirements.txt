@@ -12,3 +12,4 @@ stvis
 pillow
 requests
 numpy
+graphviz

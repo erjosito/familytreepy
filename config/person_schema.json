@@ -1,0 +1,46 @@
+{
+  "fields": {
+    "firstname": {
+      "type": "string",
+      "required": false,
+      "label": "First name"
+    },
+    "lastname": {
+      "type": "string",
+      "required": false,
+      "label": "Last name"
+    },
+    "birthdate": {
+      "type": "date",
+      "required": false,
+      "label": "Birth date"
+    },
+    "birthplace": {
+      "type": "string",
+      "required": false,
+      "label": "Birthplace"
+    },
+    "isAlive": {
+      "type": "boolean",
+      "required": false,
+      "label": "Is alive",
+      "default": true
+    },
+    "deathdate": {
+      "type": "date",
+      "required": false,
+      "label": "Death date",
+      "visible_when": {"field": "isAlive", "equals": false}
+    },
+    "profilepic": {
+      "type": "image_url",
+      "required": false,
+      "label": "Profile picture"
+    },
+    "pictures": {
+      "type": "image_url_array",
+      "required": false,
+      "label": "Pictures"
+    }
+  }
+}

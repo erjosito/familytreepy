@@ -1,0 +1,17 @@
+{
+  "relationship_types": {
+    "isChildOf": {
+      "directed": true,
+      "permanent": true,
+      "color": "#FF0000",
+      "label": "Child of"
+    },
+    "isSpouseOf": {
+      "directed": false,
+      "permanent": false,
+      "color": "#0000FF",
+      "label": "Spouse of",
+      "date_fields": ["start_date", "end_date"]
+    }
+  }
+}

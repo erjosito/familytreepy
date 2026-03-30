@@ -17,12 +17,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY ./app.py ./
 COPY ./familytree.py ./
+COPY ./treelogo01.svg ./
 RUN mkdir -p .streamlit
 RUN mkdir -p pages
 RUN mkdir -p imagegen
 COPY ./.streamlit/secretsazure.toml .streamlit/secrets.toml
 COPY ./pages/*.py pages/
-COPY ./imagegen/*.py imagegen/
+COPY ./imagegen/*.* imagegen/
 
 # Expose Streamlit default port
 EXPOSE 8501

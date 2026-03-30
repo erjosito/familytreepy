@@ -17,6 +17,7 @@ class FamilyTree:
                  localfile=None, 
                  azstorage_account=None, azstorage_key=None, azstorage_container=None, azstorage_blob=None, 
                  cosmosdb_host=None, cosmosdb_db=None, cosmosdb_collection=None, cosmosdb_key=None,
+                 relationship_schema=None,
                  verbose=False):
         self.backend = backend
         self.localfile = localfile
@@ -29,6 +30,7 @@ class FamilyTree:
         self.cosmosdb_collection = cosmosdb_collection
         self.cosmosdb_key = cosmosdb_key
         self.autosave = autosave
+        self.relationship_schema = relationship_schema
         if self.backend == "local" and len(self.localfile) > 0:
             self.tempfile = os.path.splitext(self.localfile)[0] + "_temp" + os.path.splitext(self.localfile)[1]
         # Create new graph or load it
@@ -152,7 +154,7 @@ class FamilyTree:
                 self.graph = nx.read_gml(temp_file)
                 return True
             except Exception as e:
-                # print(f"Error loading graph from Azure Storage: {e}")
+                print(f"Error loading graph from Azure Storage: {e}")
                 return False
         else:
             raise ValueError("Local file must be specified to load data when using backend=local")
@@ -269,13 +271,29 @@ class FamilyTree:
                 gremlin_query += f".property('{key}', '{value}')"
             self.cosmosdb_client.submit(gremlin_query).all().result()
         return person_id
-    # Relationships can be of types "isChildOf" or "isSpouseOf"
-    def add_relationship(self, person1_id, person2_id, type):
+    # Relationships can be of types defined in the relationship schema (defaults to isChildOf, isSpouseOf)
+    def add_relationship(self, person1_id, person2_id, type, start_date=None, **extra_attrs):
         if person1_id not in self.graph or person2_id not in self.graph:
             raise ValueError("Both persons must be in the family tree")
-        if type not in ['isChildOf', 'isSpouseOf']:
-            raise ValueError("Invalid relationship type " + type + ". Valid relationship types are: isChildOf, isSpouseOf")
-        self.graph.add_edge(person1_id, person2_id, type=type)
+        if self.relationship_schema:
+            if not self.relationship_schema.is_valid_type(type):
+                valid = list(self.relationship_schema.get_all_types().keys())
+                raise ValueError(f"Invalid relationship type '{type}'. Valid types: {valid}")
+        else:
+            if type not in ['isChildOf', 'isSpouseOf']:
+                raise ValueError("Invalid relationship type " + type + ". Valid relationship types are: isChildOf, isSpouseOf")
+        edge_attrs = {'type': type, **extra_attrs}
+        # Add soft-delete fields for non-permanent relationship types
+        is_permanent = True
+        if self.relationship_schema:
+            is_permanent = self.relationship_schema.is_permanent(type)
+        else:
+            is_permanent = (type == 'isChildOf')
+        if not is_permanent:
+            edge_attrs.setdefault('is_active', True)
+            if start_date:
+                edge_attrs['start_date'] = start_date
+        self.graph.add_edge(person1_id, person2_id, **edge_attrs)
         if self.autosave:
             self.save()
         if self.backend == 'cosmosdb':
@@ -360,6 +378,10 @@ class FamilyTree:
         return longest_chain
     # Add a level attribute to each node indicating its generation level.
     def assign_generation_levels(self, debug=False):
+        # Clear any previously assigned levels
+        for node in self.graph.nodes():
+            if 'level' in self.graph.nodes[node]:
+                del self.graph.nodes[node]['level']
         # Recursive function to assign levels
         def assign_level(node_id, level):
             if debug:
@@ -430,6 +452,96 @@ class FamilyTree:
             if node_full_name.lower() == full_name.lower():
                 return node
         return None
+    #####################
+    #   Relationships   #
+    #####################
+    def deactivate_relationship(self, person1_id, person2_id, end_date=None):
+        """Soft-delete a deactivatable relationship by setting is_active=False and end_date."""
+        if not self.graph.has_edge(person1_id, person2_id):
+            raise ValueError(f"No relationship exists between {person1_id} and {person2_id}")
+        edge = self.graph[person1_id][person2_id]
+        rel_type = edge.get('type', '')
+        is_permanent = True
+        if self.relationship_schema:
+            is_permanent = self.relationship_schema.is_permanent(rel_type)
+        else:
+            is_permanent = (rel_type == 'isChildOf')
+        if is_permanent:
+            raise ValueError(f"Cannot deactivate permanent relationship type '{rel_type}'")
+        edge['is_active'] = False
+        if end_date:
+            edge['end_date'] = end_date
+        # For bidirectional relationships (e.g., isSpouseOf), also deactivate the reverse edge
+        if self.graph.has_edge(person2_id, person1_id):
+            reverse_edge = self.graph[person2_id][person1_id]
+            if reverse_edge.get('type') == rel_type:
+                reverse_edge['is_active'] = False
+                if end_date:
+                    reverse_edge['end_date'] = end_date
+        if self.autosave:
+            self.save()
+    def get_relationships(self, person_id=None, include_inactive=False):
+        """Get relationships, optionally for a specific person, with inactive filtering."""
+        edges = []
+        if person_id:
+            if person_id not in self.graph:
+                raise ValueError("Person must be in the family tree")
+            for neighbor in self.graph.successors(person_id):
+                edge = self.graph[person_id][neighbor]
+                if include_inactive or edge.get('is_active', True):
+                    edges.append({'source': person_id, 'target': neighbor, **dict(edge)})
+            for neighbor in self.graph.predecessors(person_id):
+                edge = self.graph[neighbor][person_id]
+                if include_inactive or edge.get('is_active', True):
+                    edges.append({'source': neighbor, 'target': person_id, **dict(edge)})
+        else:
+            for source, target, data in self.graph.edges(data=True):
+                if include_inactive or data.get('is_active', True):
+                    edges.append({'source': source, 'target': target, **dict(data)})
+        return edges
+    def get_siblings(self, person_id):
+        """Infer siblings: persons sharing at least one parent via isChildOf edges."""
+        if person_id not in self.graph:
+            raise ValueError("Person must be in the family tree")
+        parents = set()
+        for neighbor in self.graph.successors(person_id):
+            if self.graph[person_id][neighbor].get('type') == 'isChildOf':
+                if self.graph[person_id][neighbor].get('is_active', True):
+                    parents.add(neighbor)
+        siblings = set()
+        for parent in parents:
+            for child in self.graph.predecessors(parent):
+                edge = self.graph[child][parent]
+                if edge.get('type') == 'isChildOf' and edge.get('is_active', True):
+                    if child != person_id:
+                        siblings.add(child)
+        return list(siblings)
+    #################
+    #   API Format  #
+    #################
+    def format_for_api(self, root_id=None, degree=None, include_inactive=False):
+        """Return graph data formatted for the REST API (nodes + edges dicts)."""
+        # Ensure generation levels are assigned so the frontend can do hierarchical layout
+        self.assign_generation_levels()
+        if root_id and degree:
+            subgraph = self.get_subgraph_degrees(root_id, degree=degree)
+        else:
+            subgraph = self.graph
+        nodes = []
+        for person_id, person_data in subgraph.nodes(data=True):
+            node = dict(person_data)
+            node['id'] = person_id
+            node['fullname'] = (node.get('firstname', '') + ' ' + node.get('lastname', '')).strip()
+            nodes.append(node)
+        edges = []
+        for source, target, data in subgraph.edges(data=True):
+            if include_inactive or data.get('is_active', True):
+                edge = dict(data)
+                edge['id'] = f"{source}_to_{target}"
+                edge['source'] = source
+                edge['target'] = target
+                edges.append(edge)
+        return {'nodes': nodes, 'edges': edges}
     # Return a (sub)graph formatted for representation with the Streamlit Link Analysis library
     def format_for_st_link_analysis(self, root_id=None, degree=None):
         nodes = []
@@ -471,9 +583,20 @@ class FamilyTree:
             raise ValueError("Person must be in the family tree")
         if 'pictures' not in self.graph.nodes[person_id]:
             self.graph.nodes[person_id]["pictures"] = []
-        self.graph.nodes[person_id]["pictures"].append(picture_url)
+        if picture_url not in self.graph.nodes[person_id]["pictures"]:
+            self.graph.nodes[person_id]["pictures"].append(picture_url)
         if self.autosave:
             self.save()
+
+    def remove_picture(self, person_id, picture_url):
+        if person_id not in self.graph:
+            raise ValueError("Person must be in the family tree")
+        pics = self.graph.nodes[person_id].get("pictures", [])
+        if picture_url in pics:
+            pics.remove(picture_url)
+            self.graph.nodes[person_id]["pictures"] = pics
+            if self.autosave:
+                self.save()
 
     ###############
     #    Delete   #
