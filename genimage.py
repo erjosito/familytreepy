@@ -11,17 +11,24 @@ import argparse
 
 # Get azure storage credentials (account name and key) and container/blob names from command line arguments
 parser = argparse.ArgumentParser(description='Family Tree editing  with Azure Storage Backend')
+# Azure Storage Account where everything is stored
 parser.add_argument('--azure-storage-account', type=str, required=True, help='Azure Storage Account Name', dest='azure_storage_account')
+# Azure Storage Account Key
 parser.add_argument('--azure-storage-key', type=str, required=True, help='Azure Storage Account Key', dest='azure_storage_key')
+# Azure Storage Container where the family tree gml file is stored
 parser.add_argument('--azure-storage-container', type=str, required=True, help='Azure Storage Container Name', dest='azure_storage_container')
+# Azure Storage Blob where the family tree gml file is stored
 parser.add_argument('--azure-storage-blob', type=str, required=True, help='Azure Storage Blob Name', dest='azure_storage_blob')
+# Azure Storage SAS Token with read permissions to the image container
 parser.add_argument('--azure-storage-sas', type=str, required=True, help='Azure Storage SAS Token', dest='azure_storage_sas')
+# Whether to enable verbose output for debugging
 parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
 args = parser.parse_args()
 
 # Load up tree from Azure Storage
 tree = FamilyTree(backend='azstorage', azstorage_account=args.azure_storage_account, azstorage_key=args.azure_storage_key, azstorage_container=args.azure_storage_container, azstorage_blob=args.azure_storage_blob, verbose=args.verbose)
-root_person_id = "4fa15fba-3fea-4f95-a947-3c165de9aed6"
+# root_person_id = "4fa15fba-3fea-4f95-a947-3c165de9aed6"  # Adrian
+root_person_id = "907ebc12-ea05-4e0d-aed3-a68b62183490"  # Sierri
 degrees = 3
 
 # Generate image
