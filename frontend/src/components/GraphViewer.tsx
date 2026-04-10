@@ -6,12 +6,12 @@ import type { GraphData } from "@/lib/types";
 
 export type LayoutMode = "breadthfirst" | "concentric" | "cose" | "grid" | "circle";
 
-export const LAYOUT_OPTIONS: { value: LayoutMode; label: string }[] = [
-  { value: "breadthfirst", label: "Hierarchical" },
-  { value: "concentric", label: "Radial" },
-  { value: "cose", label: "Force-directed" },
-  { value: "grid", label: "Grid" },
-  { value: "circle", label: "Circle" },
+export const LAYOUT_OPTIONS: { value: LayoutMode; labelKey: string }[] = [
+  { value: "breadthfirst", labelKey: "layout.hierarchical" },
+  { value: "concentric", labelKey: "layout.radial" },
+  { value: "cose", labelKey: "layout.forceDirected" },
+  { value: "grid", labelKey: "layout.grid" },
+  { value: "circle", labelKey: "layout.circle" },
 ];
 
 interface Props {
@@ -164,6 +164,7 @@ function buildHierarchicalLayout(
 
   // --- 5. Assign x,y coordinates ----------------------------------------
   const xSpacing = 160;
+  const spouseGap = 90;  // tighter spacing within a spouse unit
   const ySpacing = 140;
   const positions: Record<string, { x: number; y: number }> = {};
 
@@ -171,46 +172,91 @@ function buildHierarchicalLayout(
     const lv = sortedLevels[row];
     const ids = levelMap.get(lv)!;
     ids.sort((a, b) => (pos.get(a) ?? 0) - (pos.get(b) ?? 0));
-    const totalW = (ids.length - 1) * xSpacing;
-    ids.forEach((id, col) => {
-      positions[id] = { x: col * xSpacing - totalW / 2, y: row * ySpacing };
-    });
+    // Variable spacing: closer for spouses, wider between separate units
+    let x = 0;
+    for (let i = 0; i < ids.length; i++) {
+      if (i > 0) {
+        const sameUnit = nodeToUnit.get(ids[i]) === nodeToUnit.get(ids[i - 1]);
+        x += sameUnit ? spouseGap : xSpacing;
+      }
+      positions[ids[i]] = { x, y: row * ySpacing };
+    }
+    // Center around x = 0
+    if (ids.length > 0) {
+      const center = (positions[ids[0]].x + positions[ids[ids.length - 1]].x) / 2;
+      for (const id of ids) positions[id].x -= center;
+    }
   }
 
-  // --- 6. Center family units above their children -----------------------
-  // Process from bottom-up so leaf positions are stable.
-  for (let row = sortedLevels.length - 2; row >= 0; row--) {
-    const lv = sortedLevels[row];
+  // --- 6. Center family units above children + resolve overlaps ----------
+  // Helper: minimum gap between two adjacent nodes on the same level
+  const minGap = (a: string, b: string) =>
+    nodeToUnit.get(a) === nodeToUnit.get(b) ? spouseGap : xSpacing;
+
+  // Push apart any overlapping nodes on a level (symmetric push)
+  const resolveOverlaps = (lv: number) => {
     const ids = levelMap.get(lv)!;
-
-    // Process each family unit on this level
-    const processed = new Set<number>();
-    for (const id of ids) {
-      const uIdx = nodeToUnit.get(id)!;
-      if (processed.has(uIdx)) continue;
-      processed.add(uIdx);
-
-      const members = units[uIdx].filter((m) => nodeLevel.get(m) === lv);
-      // Collect all children of this family unit
-      const allChildren = new Set<string>();
-      for (const m of members) {
-        for (const c of childrenOf.get(m) || []) {
-          if (positions[c]) allChildren.add(c);
+    if (ids.length < 2) return;
+    ids.sort((a, b) => positions[a].x - positions[b].x);
+    for (let pass = 0; pass < ids.length; pass++) {
+      let moved = false;
+      for (let i = 1; i < ids.length; i++) {
+        const gap = positions[ids[i]].x - positions[ids[i - 1]].x;
+        const req = minGap(ids[i - 1], ids[i]);
+        if (gap < req) {
+          const fix = (req - gap) / 2 + 0.5;
+          positions[ids[i - 1]].x -= fix;
+          positions[ids[i]].x += fix;
+          moved = true;
         }
       }
-      if (allChildren.size === 0) continue;
+      if (!moved) break;
+    }
+  };
 
-      const childXs = [...allChildren].map((c) => positions[c].x);
-      const centerX =
-        childXs.reduce((s, x) => s + x, 0) / childXs.length;
+  // Iterate: center parents above children, then fix overlaps.
+  // Multiple passes let the layout converge when centering on one level
+  // shifts things on another.
+  for (let pass = 0; pass < 4; pass++) {
+    for (let row = sortedLevels.length - 2; row >= 0; row--) {
+      const lv = sortedLevels[row];
+      const ids = levelMap.get(lv)!;
 
-      // Shift the family unit so it is centred above its children
-      members.sort((a, b) => positions[a].x - positions[b].x);
-      const unitW = (members.length - 1) * xSpacing;
-      const unitLeft = centerX - unitW / 2;
-      members.forEach((m, i) => {
-        positions[m] = { x: unitLeft + i * xSpacing, y: positions[m].y };
-      });
+      // Process each family unit on this level
+      const processed = new Set<number>();
+      for (const id of ids) {
+        const uIdx = nodeToUnit.get(id)!;
+        if (processed.has(uIdx)) continue;
+        processed.add(uIdx);
+
+        const members = units[uIdx].filter((m) => nodeLevel.get(m) === lv);
+        // Collect all children of this family unit
+        const allChildren = new Set<string>();
+        for (const m of members) {
+          for (const c of childrenOf.get(m) || []) {
+            if (positions[c]) allChildren.add(c);
+          }
+        }
+        if (allChildren.size === 0) continue;
+
+        const childXs = [...allChildren].map((c) => positions[c].x);
+        const centerX =
+          childXs.reduce((s, x) => s + x, 0) / childXs.length;
+
+        // Shift the family unit so it is centred above its children
+        members.sort((a, b) => positions[a].x - positions[b].x);
+        const memberCenter =
+          (positions[members[0]].x +
+            positions[members[members.length - 1]].x) /
+          2;
+        const shift = centerX - memberCenter;
+        for (const m of members) {
+          positions[m].x += shift;
+        }
+      }
+
+      // Fix any overlaps introduced by centering
+      resolveOverlaps(lv);
     }
   }
 
@@ -250,17 +296,6 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
       }
     },
     [onNodeClick]
-  );
-
-  const handleCxttap = useCallback(
-    (e: EventObject) => {
-      if (e.target !== cyRef.current && e.target.isNode()) {
-        e.originalEvent?.preventDefault?.();
-        const pos = e.renderedPosition || e.position;
-        onContextMenu?.(e.target.id(), pos.x, pos.y);
-      }
-    },
-    [onContextMenu]
   );
 
   useEffect(() => {
@@ -381,22 +416,48 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
     });
 
     cyRef.current.on("tap", "node", handleTap);
-    cyRef.current.on("cxttap", "node", handleCxttap);
 
     return () => {
       cyRef.current?.destroy();
       cyRef.current = null;
     };
-  }, [data, layout, sasToken, relationshipColors, handleTap, handleCxttap]);
+  }, [data, layout, sasToken, relationshipColors, handleTap]);
 
-  // Suppress browser context menu on the graph container
+  // Suppress browser context menu and handle right-click on nodes.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const suppress = (e: Event) => e.preventDefault();
-    el.addEventListener("contextmenu", suppress, { capture: true });
-    return () => el.removeEventListener("contextmenu", suppress, { capture: true });
-  }, []);
+    const handleNativeContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cy = cyRef.current;
+      if (!cy || !onContextMenu) return;
+      // Convert page coordinates to Cytoscape model coordinates
+      const rect = el.getBoundingClientRect();
+      const renderX = e.clientX - rect.left;
+      const renderY = e.clientY - rect.top;
+      // Use Cytoscape's public API to find nodes near the click
+      const pan = cy.pan();
+      const zoom = cy.zoom();
+      const modelX = (renderX - pan.x) / zoom;
+      const modelY = (renderY - pan.y) / zoom;
+      // Find closest node within a reasonable radius
+      let closest: { id: string; dist: number } | null = null;
+      const hitRadius = 30 / zoom;
+      cy.nodes().forEach((node) => {
+        const np = node.position();
+        const dist = Math.sqrt((np.x - modelX) ** 2 + (np.y - modelY) ** 2);
+        if (dist < hitRadius && (!closest || dist < closest.dist)) {
+          closest = { id: node.id(), dist };
+        }
+      });
+      if (closest) {
+        onContextMenu(closest.id, e.pageX, e.pageY);
+      }
+    };
+    el.addEventListener("contextmenu", handleNativeContextMenu, { capture: true });
+    return () => el.removeEventListener("contextmenu", handleNativeContextMenu, { capture: true });
+  }, [onContextMenu]);
 
   return (
     <div

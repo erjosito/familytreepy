@@ -7,14 +7,21 @@ import ContextMenu from "@/components/ContextMenu";
 import PersonForm from "@/components/PersonForm";
 import { getGraph, listPersons, getPerson, createPerson, updatePerson, deletePerson, createRelationship, deactivateRelationship, getStorageConfig } from "@/lib/api";
 import type { GraphData, PersonNode, GraphEdge } from "@/lib/types";
+import { useI18n } from "@/lib/i18n";
+import { useAdminView } from "@/lib/adminView";
 
-const CONTEXT_MENU_ITEMS = [
-  { label: "Add child", action: "add_child" },
-  { label: "Add spouse", action: "add_spouse" },
-  { label: "Add parent", action: "add_parent" },
-  { label: "Edit person", action: "edit" },
-  { label: "Delete person", action: "delete" },
-];
+/** Strip non-primitive values (e.g. GML graphics objects) so React won't
+ *  choke when rendering person fields. */
+function sanitizePerson(raw: Record<string, unknown>): PersonNode {
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === null || v === undefined) continue;
+    if (Array.isArray(v) || typeof v !== "object") {
+      clean[k] = v;
+    }
+  }
+  return clean as PersonNode;
+}
 
 const EDGE_COLORS: Record<string, string> = {
   isChildOf: "#ef4444",
@@ -22,6 +29,8 @@ const EDGE_COLORS: Record<string, string> = {
 };
 
 export default function ExplorePage() {
+  const { t } = useI18n();
+  const { adminView } = useAdminView();
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [personList, setPersonList] = useState<{ id: string; fullname: string }[]>([]);
   const [rootId, setRootId] = useState<string>("");
@@ -61,7 +70,7 @@ export default function ExplorePage() {
     setContextMenu(null);
     try {
       const detail = await getPerson(nodeId);
-      setSelectedPerson(detail);
+      setSelectedPerson(sanitizePerson(detail));
       setSelectedRelationships((detail.relationships || []) as GraphEdge[]);
       setSelectedSiblings(detail.siblings || []);
     } catch (err) {
@@ -79,7 +88,7 @@ export default function ExplorePage() {
     if (!nodeId) return;
 
     if (action === "delete") {
-      if (confirm("Delete this person?")) {
+      if (confirm(t("confirm.deletePerson"))) {
         await deletePerson(nodeId);
         setSelectedPerson(null);
         await fetchGraph();
@@ -89,7 +98,7 @@ export default function ExplorePage() {
       setFormMode({ type: action as "edit" | "add_child" | "add_spouse" | "add_parent", nodeId });
       if (action === "edit") {
         const detail = await getPerson(nodeId);
-        setSelectedPerson(detail);
+        setSelectedPerson(sanitizePerson(detail));
       }
     }
   };
@@ -123,13 +132,13 @@ export default function ExplorePage() {
     <div className="flex flex-col h-screen">
       {/* Toolbar */}
       <header className="flex items-center gap-4 px-4 py-3 bg-white border-b shadow-sm flex-wrap">
-        <label className="text-sm text-gray-700">Center:</label>
+        <label className="text-sm text-gray-700">{t("toolbar.center")}</label>
         <select
           className="border rounded px-2 py-1 text-sm text-gray-900 max-w-[250px]"
           value={rootId}
           onChange={(e) => setRootId(e.target.value)}
         >
-          <option value="">All</option>
+          <option value="">{t("toolbar.all")}</option>
           {personList.map((p) => (
             <option key={p.id} value={p.id}>
               {p.fullname}
@@ -137,7 +146,7 @@ export default function ExplorePage() {
           ))}
         </select>
 
-        <label className="text-sm text-gray-700">Radius:</label>
+        <label className="text-sm text-gray-700">{t("toolbar.radius")}</label>
         <input
           type="range"
           min={1}
@@ -148,7 +157,7 @@ export default function ExplorePage() {
         />
         <span className="text-sm font-mono w-4">{degree}</span>
 
-        <label className="text-sm text-gray-700">Layout:</label>
+        <label className="text-sm text-gray-700">{t("toolbar.layout")}</label>
         <select
           className="border rounded px-2 py-1 text-sm text-gray-900"
           value={layoutMode}
@@ -156,19 +165,21 @@ export default function ExplorePage() {
         >
           {LAYOUT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
-              {opt.label}
+              {t(opt.labelKey as Parameters<typeof t>[0])}
             </option>
           ))}
         </select>
 
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => setDevMode((v) => !v)}
-            className={`text-xs px-2 py-1 rounded border ${devMode ? "bg-yellow-100 border-yellow-400 text-yellow-700" : "border-gray-300 text-gray-400 hover:text-gray-600"}`}
-          >
-            {devMode ? "🐛 Dev" : "🐛"}
-          </button>
-        </div>
+        {adminView && (
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setDevMode((v) => !v)}
+              className={`text-xs px-2 py-1 rounded border ${devMode ? "bg-yellow-100 border-yellow-400 text-yellow-700" : "border-gray-300 text-gray-400 hover:text-gray-600"}`}
+            >
+              {devMode ? "🐛 Dev" : "🐛"}
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Main content */}
@@ -177,7 +188,7 @@ export default function ExplorePage() {
         <div className="flex-[65] relative">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
-              <span className="text-gray-400">Loading...</span>
+              <span className="text-gray-400">{t("toolbar.loading")}</span>
             </div>
           )}
           <GraphViewer
@@ -192,7 +203,13 @@ export default function ExplorePage() {
             <ContextMenu
               x={contextMenu.x}
               y={contextMenu.y}
-              items={CONTEXT_MENU_ITEMS}
+              items={[
+                { label: t("menu.addChild"), action: "add_child" },
+                { label: t("menu.addSpouse"), action: "add_spouse" },
+                { label: t("menu.addParent"), action: "add_parent" },
+                { label: t("menu.editPerson"), action: "edit" },
+                { label: t("menu.deletePerson"), action: "delete" },
+              ]}
               onSelect={handleContextAction}
               onClose={() => setContextMenu(null)}
             />
@@ -209,9 +226,9 @@ export default function ExplorePage() {
                   Object.entries(selectedPerson).filter(([k]) => !["id", "fullname", "relationships", "siblings"].includes(k))
                 ) : {}}
                 title={
-                  formMode.type === "edit" ? "Edit Person" :
-                  formMode.type === "add_child" ? "Add Child" :
-                  formMode.type === "add_spouse" ? "Add Spouse" : "Add Parent"
+                  formMode.type === "edit" ? t("form.editPerson") :
+                  formMode.type === "add_child" ? t("form.addChild") :
+                  formMode.type === "add_spouse" ? t("form.addSpouse") : t("form.addParent")
                 }
                 onSubmit={handleFormSubmit}
                 onCancel={() => setFormMode(null)}
@@ -231,7 +248,7 @@ export default function ExplorePage() {
                 listPersons().then(setPersonList);
                 if (selectedPerson) {
                   const detail = await getPerson(selectedPerson.id);
-                  setSelectedPerson(detail);
+                  setSelectedPerson(sanitizePerson(detail));
                   setSelectedRelationships((detail.relationships || []) as GraphEdge[]);
                   setSelectedSiblings(detail.siblings || []);
                 }

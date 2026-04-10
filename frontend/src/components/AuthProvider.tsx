@@ -1,73 +1,78 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { MsalProvider, useMsal, useIsAuthenticated } from "@azure/msal-react";
-import { msalInstance, loginRequest, isAuthEnabled } from "@/lib/auth";
+import { isAuthEnabled } from "@/lib/auth";
+import { AdminViewProvider } from "@/lib/adminView";
+import { useI18n } from "@/lib/i18n";
 import NavBar from "./NavBar";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+interface SessionUser {
+  email: string;
+  name: string;
+  roles: string[];
+  role?: string;
+}
+
 function AuthGate({ children }: { children: ReactNode }) {
-  const { instance } = useMsal();
-  const isAuthenticated = useIsAuthenticated();
-  const [ready, setReady] = useState(false);
+  const { t } = useI18n();
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    instance.handleRedirectPromise().then(() => setReady(true)).catch(() => setReady(true));
-  }, [instance]);
+    fetch(`${API_BASE}/api/auth/session`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((u) => setUser(u))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
+  }, []);
 
-  if (!ready) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen text-gray-500">
-        Loading...
+      <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400">
+        {t("auth.loading")}
       </div>
     );
   }
 
-  if (!isAuthenticated) {
+  if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">🌳 Family Tree</h1>
-        <p className="text-gray-500">Sign in to continue</p>
-        <button
+      <div className="flex flex-col items-center justify-center h-screen gap-4 bg-white dark:bg-gray-900">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t("auth.title")}</h1>
+        <p className="text-gray-500 dark:text-gray-400">{t("auth.signInPrompt")}</p>
+        <a
+          href={`${API_BASE}/api/auth/login`}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          onClick={() => instance.loginRedirect(loginRequest)}
         >
-          Sign in with Microsoft
-        </button>
+          {t("auth.signIn")}
+        </a>
       </div>
     );
   }
+
+  const isAdmin = user.roles?.includes("admin") || user.role === "admin";
 
   return (
-    <>
-      <NavBar />
+    <AdminViewProvider isAdmin={isAdmin} userEmail={user.email} userName={user.name}>
+      <NavBar userName={user.name} onLogout={async () => {
+        await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", credentials: "include" });
+        window.location.reload();
+      }} />
       {children}
-    </>
+    </AdminViewProvider>
   );
 }
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
-  const [msalReady, setMsalReady] = useState(false);
-
-  useEffect(() => {
-    // MSAL v4 requires explicit initialization
-    msalInstance.initialize().then(() => setMsalReady(true)).catch(() => setMsalReady(true));
-  }, []);
-
   if (!isAuthEnabled()) {
-    return <>{children}</>;
-  }
-
-  if (!msalReady) {
     return (
-      <div className="flex items-center justify-center h-screen text-gray-500">
-        Initializing...
-      </div>
+      <AdminViewProvider isAdmin={true} userEmail="dev@localhost">
+        <NavBar />
+        {children}
+      </AdminViewProvider>
     );
   }
 
-  return (
-    <MsalProvider instance={msalInstance}>
-      <AuthGate>{children}</AuthGate>
-    </MsalProvider>
-  );
+  return <AuthGate>{children}</AuthGate>;
 }

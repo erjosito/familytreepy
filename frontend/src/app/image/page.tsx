@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { listPersons, listRenderers, generateImage } from "@/lib/api";
 import type { RendererInfo } from "@/lib/types";
+import { useI18n } from "@/lib/i18n";
 
 export default function ImagePage() {
+  const { t } = useI18n();
   const [personList, setPersonList] = useState<{ id: string; fullname: string }[]>([]);
   const [renderers, setRenderers] = useState<RendererInfo[]>([]);
   const [rootId, setRootId] = useState("");
@@ -52,17 +54,17 @@ export default function ImagePage() {
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         {/* Controls */}
         <div className="bg-white rounded-lg border p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Generate Family Tree Image</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{t("image.title")}</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Center Person</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t("image.centerPerson")}</label>
               <select
                 className="w-full border rounded px-3 py-2 text-sm text-gray-900"
                 value={rootId}
                 onChange={(e) => setRootId(e.target.value)}
               >
-                <option value="">Select a person...</option>
+                <option value="">{t("image.selectPerson")}</option>
                 {personList.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.fullname}
@@ -73,7 +75,7 @@ export default function ImagePage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Degree: {degree}
+                {t("image.degree")} {degree}
               </label>
               <input
                 type="range"
@@ -86,7 +88,7 @@ export default function ImagePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Layout</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t("image.layout")}</label>
               <select
                 className="w-full border rounded px-3 py-2 text-sm text-gray-900"
                 value={renderer}
@@ -106,7 +108,7 @@ export default function ImagePage() {
             onClick={handleGenerate}
             disabled={!rootId || !renderer || loading}
           >
-            {loading ? "Generating..." : "Generate Image"}
+            {loading ? t("image.generating") : t("image.generate")}
           </button>
         </div>
 
@@ -121,12 +123,12 @@ export default function ImagePage() {
         {imageUrl && (
           <div className="bg-white rounded-lg border p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Preview</h3>
+              <h3 className="font-semibold text-gray-900">{t("image.preview")}</h3>
               <button
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm transition-colors"
                 onClick={handleDownload}
               >
-                ⬇ Download PNG
+                {t("image.download")}
               </button>
             </div>
             <img src={imageUrl} alt="Family tree" className="w-full rounded border" />

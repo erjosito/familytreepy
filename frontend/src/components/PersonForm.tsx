@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { getPersonSchema } from "@/lib/api";
 import type { FieldConfig } from "@/lib/types";
+import { useI18n } from "@/lib/i18n";
 
 interface Props {
   mode: "add" | "edit";
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function PersonForm({ mode, initialData = {}, title, onSubmit, onCancel }: Props) {
+  const { t } = useI18n();
   const [schema, setSchema] = useState<Record<string, FieldConfig>>({});
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData);
 
@@ -80,14 +82,14 @@ export default function PersonForm({ mode, initialData = {}, title, onSubmit, on
           type="submit"
           className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
         >
-          {mode === "add" ? "Create" : "Save"}
+          {mode === "add" ? t("form.create") : t("form.save")}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="px-4 py-1.5 border text-sm rounded hover:bg-gray-50"
         >
-          Cancel
+          {t("form.cancel")}
         </button>
       </div>
     </form>

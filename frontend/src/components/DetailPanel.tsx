@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import type { PersonNode, GraphEdge } from "@/lib/types";
-import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture } from "@/lib/api";
+import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, getNotes, addNote, deleteNote, type Note } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { useAdminView } from "@/lib/adminView";
 
 interface Props {
   person: PersonNode | null;
@@ -11,6 +14,7 @@ interface Props {
   personList?: { id: string; fullname: string }[];
   devMode?: boolean;
   sasToken?: string;
+  currentUserEmail?: string;
   onClose?: () => void;
   onPersonUpdated?: () => void;
 }
@@ -22,9 +26,11 @@ export default function DetailPanel({
   personList = [],
   devMode = false,
   sasToken = "",
+  currentUserEmail = "",
   onClose,
   onPersonUpdated,
 }: Props) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
@@ -42,8 +48,8 @@ export default function DetailPanel({
   if (!person) {
     return (
       <div className="p-6 text-gray-400 text-center">
-        <p className="text-lg">Select a person</p>
-        <p className="text-sm mt-2">Click on a node in the graph to see details</p>
+        <p className="text-lg">{t("detail.selectPerson")}</p>
+        <p className="text-sm mt-2">{t("detail.selectHint")}</p>
       </div>
     );
   }
@@ -102,14 +108,22 @@ export default function DetailPanel({
     <div className="p-4 space-y-4 overflow-y-auto h-full">
       {/* Header */}
       <div className="flex justify-between items-start">
-        <h2 className="text-xl font-bold text-gray-900">{person.fullname || "Unknown"}</h2>
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">{person.fullname || "Unknown"}</h2>
+          <Link
+            href={`/person/?id=${person.id}`}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            {t("detail.viewProfile")}
+          </Link>
+        </div>
         <div className="flex gap-1">
           {!editing && (
             <button
               onClick={startEdit}
               className="text-xs px-2 py-1 rounded border border-blue-300 text-blue-600 hover:bg-blue-50"
             >
-              ✏️ Edit
+              {t("detail.edit")}
             </button>
           )}
           {onClose && (
@@ -136,7 +150,7 @@ export default function DetailPanel({
         {editing && (
           <div className="flex flex-col gap-1">
             <label className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer text-center">
-              📷 Change
+              {t("detail.changePhoto")}
               <input type="file" accept="image/*" className="hidden" onChange={handlePicSelected} />
             </label>
           </div>
@@ -171,13 +185,13 @@ export default function DetailPanel({
             disabled={saving}
             className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
           >
-            {saving ? "Saving..." : "💾 Save"}
+            {saving ? t("detail.saving") : t("detail.save")}
           </button>
           <button
             onClick={cancelEdit}
             className="px-4 py-1.5 border text-sm rounded hover:bg-gray-50"
           >
-            Cancel
+            {t("detail.cancel")}
           </button>
         </div>
       )}
@@ -186,22 +200,44 @@ export default function DetailPanel({
       {relationships.length > 0 && (
         <div>
           <h3 className="font-semibold text-sm text-gray-600 uppercase tracking-wide mb-2">
-            Relationships
+            {t("rel.title")}
           </h3>
-          <ul className="space-y-1 text-sm">
-            {relationships.map((rel, i) => (
-              <li key={i} className={`flex items-center gap-2 ${!rel.is_active ? "opacity-50" : ""}`}>
-                <span
-                  className="inline-block w-2 h-2 rounded-full"
-                  style={{ backgroundColor: rel.type === "isChildOf" ? "#ef4444" : "#3b82f6" }}
-                />
-                <span>{rel.type}</span>
-                <span className="text-gray-500">→ {rel.source === person.id ? rel.target : rel.source}</span>
-                {!rel.is_active && <span className="text-xs text-red-400">(inactive)</span>}
-                {rel.start_date && <span className="text-xs text-gray-500">{rel.start_date}</span>}
-                {rel.end_date && <span className="text-xs text-gray-500">– {rel.end_date}</span>}
-              </li>
-            ))}
+          <ul className="space-y-1.5 text-sm">
+            {relationships.map((rel, i) => {
+              const isSource = rel.source === person.id;
+              const otherId = isSource ? rel.target : rel.source;
+              const otherName = personList.find((p) => p.id === otherId)?.fullname || otherId;
+              let label: string;
+              if (rel.type === "isChildOf") {
+                label = isSource ? t("rel.parent") : t("rel.child");
+              } else if (rel.type === "isSpouseOf") {
+                label = t("rel.spouse");
+              } else {
+                label = rel.type;
+              }
+              const isActive = rel.is_active !== false;
+              const canToggle = rel.type !== "isChildOf";
+              return (
+                <li key={i} className={`flex items-center gap-2 ${!isActive ? "opacity-60" : ""}`}>
+                  <span
+                    className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: rel.type === "isChildOf" ? "#ef4444" : "#3b82f6" }}
+                  />
+                  <span className="font-medium text-gray-700">{label}:</span>
+                  <span className="text-gray-900">{otherName}</span>
+                  {rel.start_date && <span className="text-xs text-gray-500">{rel.start_date}</span>}
+                  {rel.end_date && <span className="text-xs text-gray-500">– {rel.end_date}</span>}
+                  {canToggle && (
+                    <RelationshipToggle
+                      source={rel.source}
+                      target={rel.target}
+                      isActive={isActive}
+                      onToggled={onPersonUpdated}
+                    />
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -210,11 +246,11 @@ export default function DetailPanel({
       {siblings.length > 0 && (
         <div>
           <h3 className="font-semibold text-sm text-gray-600 uppercase tracking-wide mb-2">
-            Siblings
+            {t("rel.siblings")}
           </h3>
           <ul className="text-sm text-gray-800">
             {siblings.map((s) => (
-              <li key={s}>{s}</li>
+              <li key={s}>{personList.find((p) => p.id === s)?.fullname || s}</li>
             ))}
           </ul>
         </div>
@@ -229,9 +265,12 @@ export default function DetailPanel({
         onUpdated={onPersonUpdated}
       />
 
+      {/* Notes */}
+      <NotesSection personId={person.id} currentUserEmail={currentUserEmail} />
+
       {/* Dev mode */}
-      {devMode && <RawJsonSection label="Node JSON" data={person} />}
-      {devMode && relationships.length > 0 && <RawJsonSection label="Relationships JSON" data={relationships} />}
+      {devMode && <RawJsonSection label={t("dev.nodeJson")} data={person} />}
+      {devMode && relationships.length > 0 && <RawJsonSection label={t("dev.relJson")} data={relationships} />}
     </div>
   );
 }
@@ -240,31 +279,32 @@ export default function DetailPanel({
 /* View-only fields                                                    */
 /* ------------------------------------------------------------------ */
 function ViewFields({ person }: { person: PersonNode }) {
+  const { t } = useI18n();
   return (
     <div className="space-y-2 text-sm text-gray-900">
       {person.firstname && (
         <div>
-          <span className="font-medium text-gray-600">First name:</span> {person.firstname}
+          <span className="font-medium text-gray-600">{t("field.firstName")}:</span> {person.firstname}
         </div>
       )}
       {person.lastname && (
         <div>
-          <span className="font-medium text-gray-600">Last name:</span> {person.lastname}
+          <span className="font-medium text-gray-600">{t("field.lastName")}:</span> {person.lastname}
         </div>
       )}
       {person.birthdate && (
         <div>
-          <span className="font-medium text-gray-600">Born:</span> {person.birthdate}
+          <span className="font-medium text-gray-600">{t("field.born")}</span> {person.birthdate}
         </div>
       )}
       {person.birthplace && (
         <div>
-          <span className="font-medium text-gray-600">Birthplace:</span> {person.birthplace}
+          <span className="font-medium text-gray-600">{t("field.birthplace")}:</span> {person.birthplace}
         </div>
       )}
       <div>
-        <span className="font-medium text-gray-600">Status:</span>{" "}
-        {person.isAlive !== false ? "Living" : `Deceased${person.deathdate ? ` (${person.deathdate})` : ""}`}
+        <span className="font-medium text-gray-600">{t("field.status")}</span>{" "}
+        {person.isAlive !== false ? t("field.living") : `${t("field.deceased")}${person.deathdate ? ` (${person.deathdate})` : ""}`}
       </div>
     </div>
   );
@@ -282,17 +322,18 @@ function EditFields({
   setDraft: React.Dispatch<React.SetStateAction<Record<string, unknown>>>;
   onClear: (field: string) => void;
 }) {
+  const { t } = useI18n();
   const set = (field: string, value: unknown) => setDraft((d) => ({ ...d, [field]: value }));
 
   return (
     <div className="space-y-3 text-sm text-gray-900">
-      <Field label="First name" value={draft.firstname as string} onChange={(v) => set("firstname", v)} onClear={() => onClear("firstname")} />
-      <Field label="Last name" value={draft.lastname as string} onChange={(v) => set("lastname", v)} onClear={() => onClear("lastname")} />
-      <Field label="Birthdate" value={draft.birthdate as string} onChange={(v) => set("birthdate", v)} onClear={() => onClear("birthdate")} placeholder="e.g. 1990-01-31" />
-      <Field label="Birthplace" value={draft.birthplace as string} onChange={(v) => set("birthplace", v)} onClear={() => onClear("birthplace")} />
+      <Field label={t("field.firstName")} value={draft.firstname as string} onChange={(v) => set("firstname", v)} onClear={() => onClear("firstname")} clearLabel={t("detail.clear")} />
+      <Field label={t("field.lastName")} value={draft.lastname as string} onChange={(v) => set("lastname", v)} onClear={() => onClear("lastname")} clearLabel={t("detail.clear")} />
+      <Field label={t("field.birthdate")} value={draft.birthdate as string} onChange={(v) => set("birthdate", v)} onClear={() => onClear("birthdate")} placeholder={t("field.placeholderDate")} clearLabel={t("detail.clear")} />
+      <Field label={t("field.birthplace")} value={draft.birthplace as string} onChange={(v) => set("birthplace", v)} onClear={() => onClear("birthplace")} clearLabel={t("detail.clear")} />
 
       <div className="flex items-center gap-2">
-        <label className="font-medium text-gray-600 text-sm">Alive:</label>
+        <label className="font-medium text-gray-600 text-sm">{t("field.alive")}</label>
         <input
           type="checkbox"
           checked={draft.isAlive as boolean}
@@ -302,7 +343,7 @@ function EditFields({
       </div>
 
       {!(draft.isAlive as boolean) && (
-        <Field label="Death date" value={draft.deathdate as string} onChange={(v) => set("deathdate", v)} onClear={() => onClear("deathdate")} placeholder="e.g. 2020-12-15" />
+        <Field label={t("field.deathDate")} value={draft.deathdate as string} onChange={(v) => set("deathdate", v)} onClear={() => onClear("deathdate")} placeholder={t("field.placeholderDeathDate")} clearLabel={t("detail.clear")} />
       )}
     </div>
   );
@@ -315,6 +356,7 @@ function Field({
   onClear,
   type = "text",
   placeholder,
+  clearLabel = "Clear",
 }: {
   label: string;
   value: string;
@@ -322,6 +364,7 @@ function Field({
   onClear: () => void;
   type?: string;
   placeholder?: string;
+  clearLabel?: string;
 }) {
   return (
     <div>
@@ -339,7 +382,7 @@ function Field({
             type="button"
             onClick={onClear}
             className="text-gray-400 hover:text-red-500 text-xs px-1"
-            title="Clear"
+            title={clearLabel}
           >
             ✕
           </button>
@@ -363,6 +406,7 @@ function CropUploader({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -447,7 +491,7 @@ function CropUploader({
 
   return (
     <div className="border rounded-lg p-3 bg-gray-50 space-y-3">
-      <p className="text-xs text-gray-500 font-medium">Drag to position · Scroll to zoom</p>
+      <p className="text-xs text-gray-500 font-medium">{t("pic.dragHint")}</p>
       {/* Hidden img for loading */}
       <img
         ref={imgRef}
@@ -488,13 +532,13 @@ function CropUploader({
           disabled={uploading}
           className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
         >
-          {uploading ? "Uploading..." : "✓ Upload"}
+          {uploading ? t("pic.uploading") : t("pic.uploadBtn")}
         </button>
         <button
           onClick={onCancel}
           className="px-3 py-1 border text-xs rounded hover:bg-gray-50"
         >
-          Cancel
+          {t("pic.cancel")}
         </button>
       </div>
     </div>
@@ -517,10 +561,12 @@ function PicturesGallery({
   withSas: (url: string | undefined) => string | undefined;
   onUpdated?: () => void;
 }) {
+  const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<{ file: File; dataUrl: string } | null>(null);
   const [taggedIds, setTaggedIds] = useState<string[]>([]);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const pics = person.pictures && person.pictures.length > 0 ? person.pictures : [];
 
@@ -576,11 +622,11 @@ function PicturesGallery({
     <div>
       <div className="flex items-center justify-between mb-2">
         <h3 className="font-semibold text-sm text-gray-600 uppercase tracking-wide">
-          Pictures {pics.length > 0 && <span className="text-gray-400 normal-case">({pics.length})</span>}
+          {t("pic.title")} {pics.length > 0 && <span className="text-gray-400 normal-case">({pics.length})</span>}
         </h3>
         {!preview && (
           <label className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer">
-            + Add photo
+            {t("pic.addPhoto")}
             <input type="file" accept="image/*" className="hidden" onChange={handleFileSelected} />
           </label>
         )}
@@ -593,25 +639,11 @@ function PicturesGallery({
 
           {/* Tag people */}
           {taggable.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-gray-600 mb-1">Tag people in this photo:</p>
-              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                {taggable.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => toggleTag(p.id)}
-                    className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                      taggedIds.includes(p.id)
-                        ? "bg-blue-100 border-blue-400 text-blue-700"
-                        : "border-gray-300 text-gray-600 hover:bg-gray-100"
-                    }`}
-                  >
-                    {taggedIds.includes(p.id) ? "✓ " : ""}{p.fullname}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <PersonTagSearch
+              persons={taggable}
+              taggedIds={taggedIds}
+              onToggle={toggleTag}
+            />
           )}
 
           <div className="flex gap-2">
@@ -620,13 +652,13 @@ function PicturesGallery({
               disabled={uploading}
               className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
             >
-              {uploading ? "Uploading..." : "⬆ Upload"}
+              {uploading ? t("pic.uploading") : t("pic.upload")}
             </button>
             <button
               onClick={() => { setPreview(null); setTaggedIds([]); }}
               className="px-3 py-1 border text-xs rounded hover:bg-gray-50"
             >
-              Cancel
+              {t("pic.cancel")}
             </button>
           </div>
         </div>
@@ -640,19 +672,293 @@ function PicturesGallery({
               <img
                 src={withSas(url) || url}
                 alt=""
-                className="rounded border object-cover h-24 w-full"
+                className="rounded border object-contain h-24 w-full cursor-pointer bg-gray-100"
+                onClick={() => setLightboxUrl(withSas(url) || url)}
               />
               <button
                 onClick={() => handleRemove(url)}
                 disabled={removing === url}
                 className="absolute top-1 right-1 bg-black/50 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                title="Remove from this person"
+                title={t("pic.remove")}
               >
                 ✕
               </button>
             </div>
           ))}
         </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center cursor-pointer"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300"
+            onClick={() => setLightboxUrl(null)}
+          >
+            ✕
+          </button>
+          <img
+            src={lightboxUrl}
+            alt=""
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Notes section                                                       */
+/* ------------------------------------------------------------------ */
+function NotesSection({
+  personId,
+  currentUserEmail,
+}: {
+  personId: string;
+  currentUserEmail: string;
+}) {
+  const { t } = useI18n();
+  const { adminView, userEmail, userName } = useAdminView();
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newText, setNewText] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const noteAuthor = currentUserEmail || userEmail || userName || "anonymous";
+
+  const refresh = useCallback(() => {
+    getNotes(personId)
+      .then(setNotes)
+      .catch(() => setNotes([]))
+      .finally(() => setLoading(false));
+  }, [personId]);
+
+  useEffect(() => {
+    setLoading(true);
+    setNewText("");
+    refresh();
+  }, [refresh]);
+
+  const handleAdd = async () => {
+    if (!newText.trim()) return;
+    setAdding(true);
+    try {
+      await addNote(personId, newText.trim(), noteAuthor);
+      setNewText("");
+      refresh();
+    } catch (err) {
+      console.error("Failed to add note:", err);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDelete = async (index: number) => {
+    try {
+      await deleteNote(personId, index);
+      refresh();
+    } catch (err) {
+      console.error("Failed to delete note:", err);
+    }
+  };
+
+  const formatDate = (ts: string) => {
+    try {
+      return new Date(ts).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return ts;
+    }
+  };
+
+  return (
+    <div>
+      <h3 className="font-semibold text-sm text-gray-600 uppercase tracking-wide mb-2">
+        {t("notes.title")} {notes.length > 0 && <span className="text-gray-400 normal-case">({notes.length})</span>}
+      </h3>
+
+      {loading ? (
+        <p className="text-xs text-gray-400">{t("notes.loading")}</p>
+      ) : (
+        <>
+          {/* Existing notes */}
+          {notes.length > 0 && (
+            <div className="space-y-2 mb-3">
+              {notes.map((note, i) => (
+                <div key={i} className="bg-gray-50 rounded border p-2 text-sm group relative">
+                  <p className="text-gray-900 whitespace-pre-wrap">{note.text}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-gray-500">— {note.author}</span>
+                    <span className="text-xs text-gray-400">{formatDate(note.timestamp)}</span>
+                  </div>
+                  {adminView && (
+                    <button
+                      onClick={() => handleDelete(i)}
+                      className="absolute top-1 right-1 text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title={t("notes.delete")}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add note */}
+          <div className="space-y-1">
+            <textarea
+              value={newText}
+              onChange={(e) => setNewText(e.target.value)}
+              placeholder={t("notes.placeholder")}
+              rows={2}
+              className="w-full border rounded px-2 py-1.5 text-sm text-gray-900 resize-y"
+            />
+            <button
+              onClick={handleAdd}
+              disabled={adding || !newText.trim()}
+              className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {adding ? t("notes.adding") : t("notes.add")}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Relationship active/inactive toggle                                 */
+/* ------------------------------------------------------------------ */
+function RelationshipToggle({
+  source,
+  target,
+  isActive,
+  onToggled,
+}: {
+  source: string;
+  target: string;
+  isActive: boolean;
+  onToggled?: () => void;
+}) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+
+  const handleToggle = async () => {
+    setBusy(true);
+    try {
+      if (isActive) {
+        await deactivateRelationship(source, target);
+      } else {
+        await reactivateRelationship(source, target);
+      }
+      onToggled?.();
+    } catch (err) {
+      console.error("Toggle failed:", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleToggle}
+      disabled={busy}
+      className={`ml-auto flex-shrink-0 text-xs px-1.5 py-0.5 rounded border transition-colors ${
+        isActive
+          ? "border-green-300 text-green-700 hover:bg-green-50"
+          : "border-gray-300 text-gray-500 hover:bg-gray-50"
+      } disabled:opacity-50`}
+      title={isActive ? t("rel.deactivate") : t("rel.reactivate")}
+    >
+      {busy ? "…" : isActive ? t("rel.active") : t("rel.relInactive")}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Person tag search (type-ahead for tagging people in photos)          */
+/* ------------------------------------------------------------------ */
+function PersonTagSearch({
+  persons,
+  taggedIds,
+  onToggle,
+}: {
+  persons: { id: string; fullname: string }[];
+  taggedIds: string[];
+  onToggle: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const [query, setQuery] = useState("");
+
+  const filtered = query.trim()
+    ? persons.filter((p) => p.fullname.toLowerCase().includes(query.toLowerCase()))
+    : [];
+
+  const tagged = persons.filter((p) => taggedIds.includes(p.id));
+
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-600 mb-1">{t("pic.tagPeople")}</p>
+
+      {/* Selected tags */}
+      {tagged.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {tagged.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onToggle(p.id)}
+              className="text-xs px-2 py-0.5 rounded-full bg-blue-100 border border-blue-400 text-blue-700 transition-colors hover:bg-blue-200"
+            >
+              ✓ {p.fullname} ✕
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Search input */}
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t("tag.searchPlaceholder")}
+        className="w-full border rounded px-2 py-1 text-sm text-gray-900 mb-1"
+      />
+
+      {/* Search results */}
+      {filtered.length > 0 && (
+        <div className="max-h-32 overflow-y-auto border rounded bg-white">
+          {filtered.slice(0, 20).map((p) => {
+            const isTagged = taggedIds.includes(p.id);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => { onToggle(p.id); setQuery(""); }}
+                className={`w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 border-b last:border-b-0 transition-colors ${
+                  isTagged ? "bg-blue-50 text-blue-700" : "text-gray-900"
+                }`}
+              >
+                {isTagged ? "✓ " : ""}{p.fullname}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {query.trim() && filtered.length === 0 && (
+        <p className="text-xs text-gray-400 py-1">{t("tag.noMatches")}</p>
       )}
     </div>
   );
