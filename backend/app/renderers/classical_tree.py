@@ -64,14 +64,89 @@ _TEXT_COLOR = (60, 40, 20)          # dark brown
 _PARCHMENT_BASE = (225, 210, 180)   # warm parchment
 _PARCHMENT_DARK = (195, 175, 145)   # darker parchment for vignette
 
+# ---------------------------------------------------------------------------
+# Color schemes
+# ---------------------------------------------------------------------------
+
+_COLOR_SCHEMES = {
+    "sepia": {
+        "line_colors": _LINE_COLORS,
+        "node_fills": _NODE_FILLS,
+        "frame_rings": _FRAME_RINGS,
+        "text_color": (60, 40, 20),
+        "parchment_base": (225, 210, 180),
+        "parchment_dark": (195, 175, 145),
+    },
+    "blue": {
+        "line_colors": [
+            (42, 72, 120), (50, 65, 110), (35, 55, 100),
+            (55, 80, 130), (60, 50, 100), (65, 85, 120),
+            (70, 70, 115), (80, 60, 105), (50, 85, 110), (45, 75, 100),
+        ],
+        "node_fills": [
+            (140, 170, 210), (130, 160, 200), (150, 175, 205),
+            (125, 155, 195), (145, 165, 200), (135, 150, 190),
+            (140, 160, 195), (130, 155, 185),
+        ],
+        "frame_rings": [
+            (65, 105, 160), (90, 135, 190), (110, 155, 210),
+            (90, 135, 190), (65, 105, 160),
+        ],
+        "text_color": (20, 30, 60),
+        "parchment_base": (220, 230, 240),
+        "parchment_dark": (185, 200, 215),
+    },
+    "green": {
+        "line_colors": [
+            (42, 100, 55), (50, 90, 60), (35, 85, 50),
+            (55, 105, 65), (60, 80, 55), (45, 95, 70),
+            (70, 90, 60), (55, 85, 75), (50, 100, 65), (65, 95, 55),
+        ],
+        "node_fills": [
+            (150, 190, 155), (140, 180, 145), (155, 185, 150),
+            (135, 175, 140), (145, 185, 150), (140, 170, 145),
+            (150, 180, 155), (135, 175, 135),
+        ],
+        "frame_rings": [
+            (65, 120, 70), (90, 150, 95), (110, 170, 115),
+            (90, 150, 95), (65, 120, 70),
+        ],
+        "text_color": (20, 45, 25),
+        "parchment_base": (225, 235, 220),
+        "parchment_dark": (190, 205, 185),
+    },
+    "grayscale": {
+        "line_colors": [
+            (80, 80, 80), (90, 90, 90), (70, 70, 70),
+            (100, 100, 100), (85, 85, 85), (75, 75, 75),
+            (95, 95, 95), (65, 65, 65), (105, 105, 105), (60, 60, 60),
+        ],
+        "node_fills": [
+            (180, 180, 180), (170, 170, 170), (175, 175, 175),
+            (165, 165, 165), (185, 185, 185), (160, 160, 160),
+            (178, 178, 178), (168, 168, 168),
+        ],
+        "frame_rings": [
+            (100, 100, 100), (140, 140, 140), (170, 170, 170),
+            (140, 140, 140), (100, 100, 100),
+        ],
+        "text_color": (30, 30, 30),
+        "parchment_base": (240, 240, 240),
+        "parchment_dark": (210, 210, 210),
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Procedural parchment background
 # ---------------------------------------------------------------------------
 
-def _make_parchment(w: int, h: int) -> Image.Image:
+def _make_parchment(w: int, h: int, palette: dict | None = None) -> Image.Image:
     """Generate a parchment-textured background."""
-    img = Image.new("RGB", (w, h), _PARCHMENT_BASE)
+    parchment_base = (palette or {}).get("parchment_base", _PARCHMENT_BASE)
+    parchment_dark = (palette or {}).get("parchment_dark", _PARCHMENT_DARK)
+
+    img = Image.new("RGB", (w, h), parchment_base)
     draw = ImageDraw.Draw(img)
 
     # Grain noise
@@ -80,8 +155,7 @@ def _make_parchment(w: int, h: int) -> Image.Image:
         x = rng.randint(0, w - 1)
         y = rng.randint(0, h - 1)
         offset = rng.randint(-15, 15)
-        base = _PARCHMENT_BASE
-        c = tuple(max(0, min(255, base[i] + offset)) for i in range(3))
+        c = tuple(max(0, min(255, parchment_base[i] + offset)) for i in range(3))
         draw.point((x, y), fill=c)
 
     # Subtle stain blotches
@@ -89,8 +163,8 @@ def _make_parchment(w: int, h: int) -> Image.Image:
         sx = rng.randint(w // 6, w * 5 // 6)
         sy = rng.randint(h // 6, h * 5 // 6)
         sr = rng.randint(min(w, h) // 12, min(w, h) // 6)
-        stain_color = tuple(max(0, _PARCHMENT_BASE[i] - rng.randint(10, 25)) for i in range(3))
-        stain = Image.new("RGB", (sr * 2, sr * 2), _PARCHMENT_BASE)
+        stain_color = tuple(max(0, parchment_base[i] - rng.randint(10, 25)) for i in range(3))
+        stain = Image.new("RGB", (sr * 2, sr * 2), parchment_base)
         sd = ImageDraw.Draw(stain)
         sd.ellipse((0, 0, sr * 2, sr * 2), fill=stain_color)
         stain = stain.filter(ImageFilter.GaussianBlur(sr // 2))
@@ -111,7 +185,7 @@ def _make_parchment(w: int, h: int) -> Image.Image:
         r = int(max_r * (1.0 - i / steps))
         vd.ellipse((cx - r, cy - r, cx + r, cy + r), fill=255 - alpha)
     # Darken by blending towards dark parchment
-    dark = Image.new("RGB", (w, h), _PARCHMENT_DARK)
+    dark = Image.new("RGB", (w, h), parchment_dark)
     mask = vignette.filter(ImageFilter.GaussianBlur(30))
     img = Image.composite(img, dark, mask)
 
@@ -131,13 +205,17 @@ def _draw_portrait_frame(
     portrait: Image.Image | None,
     initials: str,
     font: ImageFont.ImageFont,
+    node_fills: list | None = None,
+    frame_rings: list | None = None,
 ) -> None:
     """Draw an ornate circular portrait frame at (cx, cy) with radius r."""
-    frame_w = max(3, r // 6)  # width of decorative frame border
-    outer_r = r + frame_w * len(_FRAME_RINGS) // 2
+    node_fills = node_fills or _NODE_FILLS
+    frame_rings = frame_rings or _FRAME_RINGS
+    frame_w = max(3, r // 6)
+    outer_r = r + frame_w * len(frame_rings) // 2
 
     # Draw frame rings (outer → inner)
-    for i, color in enumerate(_FRAME_RINGS):
+    for i, color in enumerate(frame_rings):
         ring_r = outer_r - i * frame_w
         draw.ellipse(
             (cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r),
@@ -152,19 +230,20 @@ def _draw_portrait_frame(
         ImageDraw.Draw(mask).ellipse((0, 0, r * 2, r * 2), fill=255)
         img.paste(pic, (cx - r, cy - r), mask)
     else:
-        color_idx = hash(initials) % len(_NODE_FILLS)
+        color_idx = hash(initials) % len(node_fills)
         draw.ellipse(
             (cx - r, cy - r, cx + r, cy + r),
-            fill=_NODE_FILLS[color_idx],
-            outline=_FRAME_RINGS[0],
+            fill=node_fills[color_idx],
+            outline=frame_rings[0],
             width=2,
         )
         draw.text((cx, cy), initials, fill=(255, 250, 240), font=font, anchor="mm")
 
-    # Inner bright ring right at the portrait edge (like a mirror bevel)
+    # Inner bright ring
+    bevel = frame_rings[2] if len(frame_rings) > 2 else (210, 195, 140)
     draw.ellipse(
         (cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1),
-        outline=(210, 195, 140),
+        outline=bevel,
         width=2,
     )
 
@@ -273,19 +352,25 @@ class ClassicalTreeRenderer(ImageRenderer):
         canvas_w: int = int(options.get("canvas_width", 2000))
         canvas_h: int = int(options.get("canvas_height", 1500))
         azure_sas: str | None = options.get("azure_storage_sas")
+        font_scale: float = float(options.get("font_scale", 1.0))
+        line_width: int = int(options.get("line_width", 2))
+        color_scheme: str = str(options.get("color_scheme", "sepia"))
+
+        # Select color palette
+        palette = _COLOR_SCHEMES.get(color_scheme, _COLOR_SCHEMES["sepia"])
 
         G = subgraph.copy()
 
         if len(G) == 0:
             return self._to_png_bytes(
-                _make_parchment(canvas_w, canvas_h)
+                _make_parchment(canvas_w, canvas_h, palette)
             )
 
         # --- level assignment ---
         G, vlevels = _assign_vlevels(G)
         if vlevels is None:
             return self._to_png_bytes(
-                _make_parchment(canvas_w, canvas_h)
+                _make_parchment(canvas_w, canvas_h, palette)
             )
         G, hlevels = _assign_hlevels(G, vlevels)
 
@@ -305,11 +390,12 @@ class ClassicalTreeRenderer(ImageRenderer):
         ))
         node_radius = max(node_radius, 18)
 
-        # Font size adapts too (for name labels)
-        font_size = max(10, min(node_radius // 2, 18))
+        # Font size adapts, scaled by user preference
+        base_font_size = max(10, min(node_radius // 2, 18))
+        font_size = max(8, int(base_font_size * font_scale))
         try:
             font = ImageFont.truetype("arial.ttf", font_size)
-            font_initials = ImageFont.truetype("arial.ttf", max(font_size, node_radius // 2))
+            font_initials = ImageFont.truetype("arial.ttf", max(font_size, int(node_radius // 2 * font_scale)))
         except (OSError, IOError):
             font = ImageFont.load_default()
             font_initials = font
@@ -349,14 +435,14 @@ class ClassicalTreeRenderer(ImageRenderer):
                     sp_idx += 1
 
         # --- create parchment canvas ---
-        img = _make_parchment(canvas_w, canvas_h)
+        img = _make_parchment(canvas_w, canvas_h, palette)
         draw = ImageDraw.Draw(img)
 
         # --- draw edges ---
-        self._draw_edges(draw, G, node_radius)
+        self._draw_edges(draw, G, node_radius, line_width, palette)
 
         # --- draw nodes ---
-        self._draw_nodes(draw, img, G, node_radius, font, font_initials, azure_sas, slot_w)
+        self._draw_nodes(draw, img, G, node_radius, font, font_initials, azure_sas, slot_w, palette)
 
         return self._to_png_bytes(img)
 
@@ -397,16 +483,16 @@ class ClassicalTreeRenderer(ImageRenderer):
                 seen.add(nb)
 
     @staticmethod
-    def _draw_edges(draw: ImageDraw.ImageDraw, G: nx.DiGraph, radius: int) -> None:
-        """Draw sepia-toned connecting lines."""
+    def _draw_edges(draw: ImageDraw.ImageDraw, G: nx.DiGraph, radius: int, lw: int = 2, palette: dict | None = None) -> None:
+        """Draw connecting lines."""
+        line_colors = (palette or {}).get("line_colors", _LINE_COLORS)
         for src, tgt, edata in G.edges(data=True):
             if "cx" not in G.nodes[src] or "cx" not in G.nodes[tgt]:
                 continue
             etype = edata.get("type", "")
-            color = _LINE_COLORS[
-                G.nodes[tgt].get("hlevel_spouse", 0) % len(_LINE_COLORS)
+            color = line_colors[
+                G.nodes[tgt].get("hlevel_spouse", 0) % len(line_colors)
             ]
-            lw = 2
 
             if etype == "isSpouseOf":
                 if G.nodes[src]["cy"] == G.nodes[tgt]["cy"]:
@@ -448,8 +534,12 @@ class ClassicalTreeRenderer(ImageRenderer):
         font_initials: ImageFont.ImageFont,
         azure_sas: str | None,
         slot_w: int,
+        palette: dict | None = None,
     ) -> None:
         """Draw ornate portrait frames with pictures or initials, and names."""
+        text_color = (palette or {}).get("text_color", _TEXT_COLOR)
+        node_fills = (palette or {}).get("node_fills", _NODE_FILLS)
+        frame_rings = (palette or {}).get("frame_rings", _FRAME_RINGS)
         # Build a smaller font for tight spaces
         small_font = font
         try:
@@ -482,10 +572,10 @@ class ClassicalTreeRenderer(ImageRenderer):
                     pass
 
             # Draw the ornate frame
-            _draw_portrait_frame(draw, img, cx, cy, radius, portrait, initials, font_initials)
+            _draw_portrait_frame(draw, img, cx, cy, radius, portrait, initials, font_initials, node_fills, frame_rings)
 
             # --- Draw name below the frame, one word per line ---
-            frame_bottom = cy + radius + max(3, radius // 6) * len(_FRAME_RINGS) // 2 + 4
+            frame_bottom = cy + radius + max(3, radius // 6) * len(frame_rings) // 2 + 4
             node_slot_w = int(pdata.get("slot_w", slot_w) * 0.85)
 
             words = fullname.split()
@@ -519,7 +609,7 @@ class ClassicalTreeRenderer(ImageRenderer):
                         tw = use_font.getbbox(display)[2] - use_font.getbbox(display)[0]
                 except Exception:
                     pass
-                draw.text((cx, y), display, fill=_TEXT_COLOR, font=use_font, anchor="mt")
+                draw.text((cx, y), display, fill=text_color, font=use_font, anchor="mt")
                 y += line_h
 
 

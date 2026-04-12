@@ -480,6 +480,47 @@ class FamilyTree:
                     reverse_edge['end_date'] = end_date
         if self.autosave:
             self.save()
+
+    def reactivate_relationship(self, person1_id, person2_id):
+        """Re-activate a previously deactivated relationship."""
+        if not self.graph.has_edge(person1_id, person2_id):
+            raise ValueError(f"No relationship exists between {person1_id} and {person2_id}")
+        edge = self.graph[person1_id][person2_id]
+        rel_type = edge.get('type', '')
+        edge['is_active'] = True
+        edge.pop('end_date', None)
+        # For bidirectional relationships, also reactivate the reverse edge
+        if self.graph.has_edge(person2_id, person1_id):
+            reverse_edge = self.graph[person2_id][person1_id]
+            if reverse_edge.get('type') == rel_type:
+                reverse_edge['is_active'] = True
+                reverse_edge.pop('end_date', None)
+        if self.autosave:
+            self.save()
+
+    def activate_all_relationships(self):
+        """Set is_active=True on every edge in the graph."""
+        for _src, _tgt, data in self.graph.edges(data=True):
+            if 'is_active' in data:
+                data['is_active'] = True
+                data.pop('end_date', None)
+        if self.autosave:
+            self.save()
+
+    def delete_relationship(self, person1_id, person2_id):
+        """Permanently remove a relationship (edge) between two persons."""
+        if not self.graph.has_edge(person1_id, person2_id):
+            raise ValueError(f"No relationship exists from {person1_id} to {person2_id}")
+        rel_type = self.graph[person1_id][person2_id].get('type', '')
+        self.graph.remove_edge(person1_id, person2_id)
+        # For bidirectional relationships, also remove the reverse edge
+        if self.graph.has_edge(person2_id, person1_id):
+            reverse_type = self.graph[person2_id][person1_id].get('type', '')
+            if reverse_type == rel_type:
+                self.graph.remove_edge(person2_id, person1_id)
+        if self.autosave:
+            self.save()
+
     def get_relationships(self, person_id=None, include_inactive=False):
         """Get relationships, optionally for a specific person, with inactive filtering."""
         edges = []
@@ -597,6 +638,21 @@ class FamilyTree:
             self.graph.nodes[person_id]["pictures"] = pics
             if self.autosave:
                 self.save()
+
+    def get_people_in_picture(self, picture_url):
+        """Return list of {id, fullname} for all persons who have this picture URL."""
+        results = []
+        for pid, data in self.graph.nodes(data=True):
+            pics = data.get("pictures", [])
+            if picture_url in pics:
+                fullname = (data.get("firstname", "") + " " + data.get("lastname", "")).strip()
+                results.append({"id": pid, "fullname": fullname})
+            # Also check profilepic
+            if data.get("profilepic") == picture_url:
+                fullname = (data.get("firstname", "") + " " + data.get("lastname", "")).strip()
+                if not any(r["id"] == pid for r in results):
+                    results.append({"id": pid, "fullname": fullname})
+        return results
 
     ###############
     #    Delete   #

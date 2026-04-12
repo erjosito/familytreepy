@@ -3,14 +3,16 @@
 import json
 import logging
 import os
+import secrets
 import time
 from typing import Optional
 
 import httpx
 from authlib.jose import JsonWebKey, jwt as authlib_jwt
 from azure.storage.blob import BlobServiceClient
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from itsdangerous import URLSafeTimedSerializer, BadSignature
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,28 @@ logger = logging.getLogger(__name__)
 AZURE_AD_TENANT_ID = os.getenv("AZURE_AD_TENANT_ID")
 AZURE_AD_CLIENT_ID = os.getenv("AZURE_AD_CLIENT_ID")
 
-_DEV_MODE = not AZURE_AD_TENANT_ID
+_DEV_MODE = os.getenv("DEV_MODE", "").lower() in ("true", "1", "yes")
+
+# ---------------------------------------------------------------------------
+# Session cookie configuration (shared with auth_router)
+# ---------------------------------------------------------------------------
+
+SESSION_SECRET = os.getenv("SESSION_SECRET", secrets.token_hex(32))
+SESSION_MAX_AGE = 86400  # 24 hours
+SESSION_COOKIE_NAME = "ft_session"
+_session_serializer = URLSafeTimedSerializer(SESSION_SECRET)
+
+
+def read_session_cookie(request: Request) -> Optional[dict]:
+    """Read and verify the session cookie, returning user dict or None."""
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not cookie:
+        return None
+    try:
+        return _session_serializer.loads(cookie, max_age=SESSION_MAX_AGE)
+    except BadSignature:
+        return None
+
 
 OIDC_DISCOVERY_URL = (
     f"https://login.microsoftonline.com/{AZURE_AD_TENANT_ID}/v2.0/"
@@ -215,3 +238,54 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
             detail="Admin privileges required",
         )
     return user
+
+
+# ---------------------------------------------------------------------------
+# Unified auth dependency (session cookie → Bearer JWT → dev mode)
+# ---------------------------------------------------------------------------
+
+
+async def require_auth(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> dict:
+    """Require any authenticated user via session cookie, Bearer JWT, or dev mode."""
+    # 1. Try session cookie
+    user = read_session_cookie(request)
+    if user:
+        return user
+
+    # 2. Try Bearer JWT
+    if credentials:
+        try:
+            claims = _decode_token(credentials.credentials)
+            email = (
+                claims.get("preferred_username")
+                or claims.get("email")
+                or claims.get("upn", "")
+            )
+            name = claims.get("name", email)
+            roles = claims.get("roles", [])
+            user_role = _get_user_role(email)
+            if user_role is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User is not authorized",
+                )
+            if user_role == "admin":
+                roles = list(set(roles) | {"admin"})
+            return {"email": email, "name": name, "roles": roles, "role": user_role}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("Token validation failed: %s", exc)
+
+    # 3. Dev mode fallback
+    if _DEV_MODE:
+        return _DEFAULT_DEV_USER
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )

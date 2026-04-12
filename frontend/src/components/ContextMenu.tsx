@@ -25,7 +25,7 @@ export default function ContextMenu({ x, y, items, onSelect, onClose }: Props) {
         {items.map((item) => (
           <button
             key={item.action}
-            className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition-colors"
+            className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-blue-50 transition-colors"
             onClick={() => {
               onSelect(item.action);
               onClose();

@@ -67,7 +67,5 @@ class GraphResponse(BaseModel):
 
 
 class ImportGmlRequest(BaseModel):
-    azstorage_account: str | None = None
-    azstorage_key: str | None = None
     azstorage_container: str
     azstorage_blob: str

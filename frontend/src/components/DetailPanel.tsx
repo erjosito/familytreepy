@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { PersonNode, GraphEdge } from "@/lib/types";
-import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, getNotes, addNote, deleteNote, type Note } from "@/lib/api";
+import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, deleteRelationship, getNotes, addNote, deleteNote, type Note } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
+import { formatDate, formatTimestamp } from "@/lib/dateUtils";
 
 interface Props {
   person: PersonNode | null;
@@ -31,6 +32,7 @@ export default function DetailPanel({
   onPersonUpdated,
 }: Props) {
   const { t } = useI18n();
+  const { adminView } = useAdminView();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
@@ -66,7 +68,7 @@ export default function DetailPanel({
       lastname: person.lastname || "",
       birthdate: person.birthdate || "",
       birthplace: person.birthplace || "",
-      isAlive: person.isAlive !== false,
+      isAlive: !!person.isAlive,
       deathdate: person.deathdate || "",
     });
     setEditing(true);
@@ -151,8 +153,20 @@ export default function DetailPanel({
           <div className="flex flex-col gap-1">
             <label className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer text-center">
               {t("detail.changePhoto")}
-              <input type="file" accept="image/*" className="hidden" onChange={handlePicSelected} />
+              <input type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff" className="hidden" onChange={handlePicSelected} />
             </label>
+            {person.profilepic && (
+              <button
+                onClick={async () => {
+                  if (!confirm(t("detail.deletePhoto"))) return;
+                  await updatePerson(person.id, { profilepic: "" });
+                  onPersonUpdated?.();
+                }}
+                className="text-xs px-2 py-1 rounded border border-red-300 text-red-500 hover:bg-red-50 text-center"
+              >
+                {t("detail.removePhoto")}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -203,41 +217,56 @@ export default function DetailPanel({
             {t("rel.title")}
           </h3>
           <ul className="space-y-1.5 text-sm">
-            {relationships.map((rel, i) => {
-              const isSource = rel.source === person.id;
-              const otherId = isSource ? rel.target : rel.source;
-              const otherName = personList.find((p) => p.id === otherId)?.fullname || otherId;
-              let label: string;
-              if (rel.type === "isChildOf") {
-                label = isSource ? t("rel.parent") : t("rel.child");
-              } else if (rel.type === "isSpouseOf") {
-                label = t("rel.spouse");
-              } else {
-                label = rel.type;
-              }
-              const isActive = rel.is_active !== false;
-              const canToggle = rel.type !== "isChildOf";
-              return (
-                <li key={i} className={`flex items-center gap-2 ${!isActive ? "opacity-60" : ""}`}>
-                  <span
-                    className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: rel.type === "isChildOf" ? "#ef4444" : "#3b82f6" }}
-                  />
-                  <span className="font-medium text-gray-700">{label}:</span>
-                  <span className="text-gray-900">{otherName}</span>
-                  {rel.start_date && <span className="text-xs text-gray-500">{rel.start_date}</span>}
-                  {rel.end_date && <span className="text-xs text-gray-500">– {rel.end_date}</span>}
-                  {canToggle && (
-                    <RelationshipToggle
-                      source={rel.source}
-                      target={rel.target}
-                      isActive={isActive}
-                      onToggled={onPersonUpdated}
+            {(() => {
+              const seenSpouses = new Set<string>();
+              return relationships.map((rel, i) => {
+                const isSource = rel.source === person.id;
+                const otherId = isSource ? rel.target : rel.source;
+                // Deduplicate bidirectional spouse edges
+                if (rel.type === "isSpouseOf") {
+                  if (seenSpouses.has(otherId)) return null;
+                  seenSpouses.add(otherId);
+                }
+                const otherName = personList.find((p) => p.id === otherId)?.fullname || otherId;
+                let label: string;
+                if (rel.type === "isChildOf") {
+                  label = isSource ? t("rel.parent") : t("rel.child");
+                } else if (rel.type === "isSpouseOf") {
+                  label = t("rel.spouse");
+                } else {
+                  label = rel.type;
+                }
+                const isActive = rel.is_active !== false;
+                const canToggle = rel.type !== "isChildOf";
+                return (
+                  <li key={i} className={`flex items-center gap-2 ${!isActive ? "opacity-60" : ""}`}>
+                    <span
+                      className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: rel.type === "isChildOf" ? "#ef4444" : "#3b82f6" }}
                     />
-                  )}
-                </li>
-              );
-            })}
+                    <span className="font-medium text-gray-700">{label}:</span>
+                    <span className="text-gray-900">{otherName}</span>
+                    {rel.start_date && <span className="text-xs text-gray-500">{rel.start_date}</span>}
+                    {rel.end_date && <span className="text-xs text-gray-500">– {rel.end_date}</span>}
+                    {canToggle && (
+                      <RelationshipToggle
+                        source={rel.source}
+                        target={rel.target}
+                        isActive={isActive}
+                        onToggled={onPersonUpdated}
+                      />
+                    )}
+                    {adminView && (
+                      <RelationshipDeleteBtn
+                        source={rel.source}
+                        target={rel.target}
+                        onDeleted={onPersonUpdated}
+                      />
+                    )}
+                  </li>
+                );
+              });
+            })()}
           </ul>
         </div>
       )}
@@ -249,7 +278,7 @@ export default function DetailPanel({
             {t("rel.siblings")}
           </h3>
           <ul className="text-sm text-gray-800">
-            {siblings.map((s) => (
+            {[...new Set(siblings)].map((s) => (
               <li key={s}>{personList.find((p) => p.id === s)?.fullname || s}</li>
             ))}
           </ul>
@@ -294,7 +323,7 @@ function ViewFields({ person }: { person: PersonNode }) {
       )}
       {person.birthdate && (
         <div>
-          <span className="font-medium text-gray-600">{t("field.born")}</span> {person.birthdate}
+          <span className="font-medium text-gray-600">{t("field.born")}</span> {formatDate(person.birthdate)}
         </div>
       )}
       {person.birthplace && (
@@ -304,7 +333,7 @@ function ViewFields({ person }: { person: PersonNode }) {
       )}
       <div>
         <span className="font-medium text-gray-600">{t("field.status")}</span>{" "}
-        {person.isAlive !== false ? t("field.living") : `${t("field.deceased")}${person.deathdate ? ` (${person.deathdate})` : ""}`}
+        {!!person.isAlive ? t("field.living") : `${t("field.deceased")}${person.deathdate ? ` (${person.deathdate})` : ""}`}
       </div>
     </div>
   );
@@ -627,7 +656,7 @@ function PicturesGallery({
         {!preview && (
           <label className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer">
             {t("pic.addPhoto")}
-            <input type="file" accept="image/*" className="hidden" onChange={handleFileSelected} />
+            <input type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff" className="hidden" onChange={handleFileSelected} />
           </label>
         )}
       </div>
@@ -668,7 +697,7 @@ function PicturesGallery({
       {pics.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
           {pics.map((url, i) => (
-            <div key={i} className="relative group">
+            <div key={`pic-${i}-${url.slice(-12)}`} className="relative group">
               <img
                 src={withSas(url) || url}
                 alt=""
@@ -729,7 +758,10 @@ function NotesSection({
   const [newText, setNewText] = useState("");
   const [adding, setAdding] = useState(false);
 
-  const noteAuthor = currentUserEmail || userEmail || userName || "anonymous";
+  const effectiveEmail = currentUserEmail || userEmail;
+  const noteAuthor = userName && effectiveEmail
+    ? `${userName} (${effectiveEmail})`
+    : userName || effectiveEmail || "anonymous";
 
   const refresh = useCallback(() => {
     getNotes(personId)
@@ -835,6 +867,46 @@ function NotesSection({
         </>
       )}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Relationship delete button (admin only)                             */
+/* ------------------------------------------------------------------ */
+function RelationshipDeleteBtn({
+  source,
+  target,
+  onDeleted,
+}: {
+  source: string;
+  target: string;
+  onDeleted?: () => void;
+}) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+
+  const handleDelete = async () => {
+    if (!confirm(t("rel.confirmDelete"))) return;
+    setBusy(true);
+    try {
+      await deleteRelationship(source, target);
+      onDeleted?.();
+    } catch (err) {
+      console.error("Delete failed:", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleDelete}
+      disabled={busy}
+      className="flex-shrink-0 text-xs text-gray-300 hover:text-red-500 transition-colors disabled:opacity-50"
+      title={t("rel.delete")}
+    >
+      {busy ? "…" : "✕"}
+    </button>
   );
 }
 

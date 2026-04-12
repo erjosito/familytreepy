@@ -63,14 +63,14 @@ export default function PersonForm({ mode, initialData = {}, title, onSubmit, on
                 type="date"
                 value={(formData[field] as string) || ""}
                 onChange={(e) => handleChange(field, e.target.value)}
-                className="w-full border rounded px-3 py-1.5 text-sm"
+                className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
               />
             ) : (
               <input
                 type="text"
                 value={(formData[field] as string) || ""}
                 onChange={(e) => handleChange(field, e.target.value)}
-                className="w-full border rounded px-3 py-1.5 text-sm"
+                className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
               />
             )}
           </div>
@@ -87,7 +87,7 @@ export default function PersonForm({ mode, initialData = {}, title, onSubmit, on
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-1.5 border text-sm rounded hover:bg-gray-50"
+          className="px-4 py-1.5 bg-gray-200 border border-gray-300 text-gray-700 text-sm rounded hover:bg-gray-300"
         >
           {t("form.cancel")}
         </button>

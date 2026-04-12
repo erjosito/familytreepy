@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 
 export type Locale = "en" | "es";
 
@@ -18,7 +18,15 @@ const translations = {
     "auth.initializing": "Initializing...",
     "auth.title": "🌳 Family Tree",
     "auth.signInPrompt": "Sign in to continue",
-    "auth.signIn": "Sign in with Microsoft",
+    "auth.signIn": "Sign in",
+    "auth.signInMicrosoft": "Sign in with Microsoft",
+    "auth.signInGoogle": "Sign in with Google",
+    "auth.signInOther": "Sign in with Google or GitHub",
+    "auth.notAuthorized": "Your account is not authorized to use this application.",
+    "auth.contactAdmin": "Please contact the application administrator to request access.",
+    "auth.tryDifferentAccount": "Try with a different account",
+    "auth.signInError": "Sign-in error",
+    "auth.tryAgain": "Try again",
 
     // Toolbar
     "toolbar.center": "Center:",
@@ -35,11 +43,16 @@ const translations = {
     "layout.circle": "Circle",
 
     // Context menu
+    "menu.centerOn": "Center on this person",
     "menu.addChild": "Add child",
     "menu.addSpouse": "Add spouse",
     "menu.addParent": "Add parent",
     "menu.editPerson": "Edit person",
     "menu.deletePerson": "Delete person",
+    "menu.linkChild": "Link existing child",
+    "menu.linkSpouse": "Link existing spouse",
+    "menu.linkParent": "Link existing parent",
+    "link.hint": "Search for a person to link as a relationship.",
 
     // Form titles
     "form.editPerson": "Edit Person",
@@ -49,6 +62,8 @@ const translations = {
     "form.create": "Create",
     "form.save": "Save",
     "form.cancel": "Cancel",
+    "form.otherParent": "Other parent",
+    "form.noOtherParent": "None (single parent)",
 
     // Confirm
     "confirm.deletePerson": "Delete this person?",
@@ -58,6 +73,8 @@ const translations = {
     "detail.selectHint": "Click on a node in the graph to see details",
     "detail.edit": "✏️ Edit",
     "detail.changePhoto": "📷 Change",
+    "detail.removePhoto": "🗑 Remove",
+    "detail.deletePhoto": "Remove the profile picture?",
     "detail.saving": "Saving...",
     "detail.save": "💾 Save",
     "detail.cancel": "Cancel",
@@ -83,6 +100,8 @@ const translations = {
     "rel.spouse": "Spouse",
     "rel.inactive": "(inactive)",
     "rel.siblings": "Siblings",
+    "rel.delete": "Delete relationship",
+    "rel.confirmDelete": "Delete this relationship? This cannot be undone.",
 
     // Pictures
     "pic.title": "Pictures",
@@ -105,9 +124,19 @@ const translations = {
     "image.generate": "Generate Image",
     "image.preview": "Preview",
     "image.download": "⬇ Download PNG",
+    "image.colorScheme": "Color scheme",
+    "image.advanced": "Advanced options",
+    "image.canvasSize": "Canvas size",
+    "image.fontScale": "Font scale",
+    "image.lineWidth": "Line width",
+
+    // Grid page
+    "grid.title": "People",
+    "grid.search": "Search by name, place, date...",
 
     // Nav (extra)
     "nav.admin": "Admin",
+    "nav.grid": "Grid",
     "nav.switchToUser": "Switch to user view",
     "nav.switchToAdmin": "Switch to admin view",
     "nav.adminBadge": "👑 Admin",
@@ -171,6 +200,42 @@ const translations = {
     "admin.roleUser": "user",
     "admin.roleAdmin": "admin",
 
+    // Geni
+    "nav.geni": "Geni",
+    "geni.title": "Geni.com Search",
+    "geni.connect": "Connect to Geni",
+    "geni.connected": "Connected to Geni",
+    "geni.search": "Search by name...",
+    "geni.searching": "Searching...",
+    "geni.noResults": "No profiles found",
+    "geni.import": "Import",
+    "geni.importFamily": "Import with family",
+    "geni.importing": "Importing...",
+    "geni.imported": "Imported!",
+    "geni.viewProfile": "View profile",
+    "geni.family": "Family",
+    "geni.parents": "Parents",
+    "geni.spouses": "Spouses",
+    "geni.children": "Children",
+
+    // Story
+    "story.loading": "Preparing your family story...",
+    "story.title": "Family Story",
+    "story.play": "Play",
+    "story.pause": "Pause",
+    "story.exit": "Exit",
+    "story.speed": "Speed",
+    "story.generation": "Generation",
+    "story.theirDaughter": "Their daughter...",
+    "story.theirSon": "Their son...",
+    "story.theirChild": "Their child...",
+    "story.marriedTo": "Married to...",
+    "story.viewStory": "View story",
+    "story.child": "child",
+    "story.children": "children",
+    "story.noSlides": "No slides to show",
+    "story.familyDefault": "Family",
+
     // Dev
     "dev.nodeJson": "Node JSON",
     "dev.relJson": "Relationships JSON",
@@ -188,7 +253,15 @@ const translations = {
     "auth.initializing": "Inicializando...",
     "auth.title": "🌳 Árbol Familiar",
     "auth.signInPrompt": "Inicia sesión para continuar",
-    "auth.signIn": "Iniciar sesión con Microsoft",
+    "auth.signIn": "Iniciar sesión",
+    "auth.signInMicrosoft": "Iniciar sesión con Microsoft",
+    "auth.signInGoogle": "Iniciar sesión con Google",
+    "auth.signInOther": "Iniciar sesión con Google o GitHub",
+    "auth.notAuthorized": "Tu cuenta no está autorizada para usar esta aplicación.",
+    "auth.contactAdmin": "Contacta al administrador de la aplicación para solicitar acceso.",
+    "auth.tryDifferentAccount": "Intentar con otra cuenta",
+    "auth.signInError": "Error de inicio de sesión",
+    "auth.tryAgain": "Intentar de nuevo",
 
     // Toolbar
     "toolbar.center": "Centro:",
@@ -205,11 +278,16 @@ const translations = {
     "layout.circle": "Círculo",
 
     // Context menu
+    "menu.centerOn": "Centrar en esta persona",
     "menu.addChild": "Añadir hijo/a",
     "menu.addSpouse": "Añadir cónyuge",
     "menu.addParent": "Añadir progenitor/a",
     "menu.editPerson": "Editar persona",
     "menu.deletePerson": "Eliminar persona",
+    "menu.linkChild": "Vincular hijo/a existente",
+    "menu.linkSpouse": "Vincular cónyuge existente",
+    "menu.linkParent": "Vincular progenitor/a existente",
+    "link.hint": "Busca una persona para vincular como relación.",
 
     // Form titles
     "form.editPerson": "Editar Persona",
@@ -219,6 +297,8 @@ const translations = {
     "form.create": "Crear",
     "form.save": "Guardar",
     "form.cancel": "Cancelar",
+    "form.otherParent": "Otro progenitor",
+    "form.noOtherParent": "Ninguno (monoparental)",
 
     // Confirm
     "confirm.deletePerson": "¿Eliminar esta persona?",
@@ -228,6 +308,8 @@ const translations = {
     "detail.selectHint": "Haz clic en un nodo del grafo para ver detalles",
     "detail.edit": "✏️ Editar",
     "detail.changePhoto": "📷 Cambiar",
+    "detail.removePhoto": "🗑 Eliminar",
+    "detail.deletePhoto": "¿Eliminar la foto de perfil?",
     "detail.saving": "Guardando...",
     "detail.save": "💾 Guardar",
     "detail.cancel": "Cancelar",
@@ -253,6 +335,8 @@ const translations = {
     "rel.spouse": "Cónyuge",
     "rel.inactive": "(inactiva)",
     "rel.siblings": "Hermanos/as",
+    "rel.delete": "Eliminar relación",
+    "rel.confirmDelete": "¿Eliminar esta relación? Esta acción no se puede deshacer.",
 
     // Pictures
     "pic.title": "Fotos",
@@ -275,9 +359,19 @@ const translations = {
     "image.generate": "Generar Imagen",
     "image.preview": "Vista previa",
     "image.download": "⬇ Descargar PNG",
+    "image.colorScheme": "Esquema de color",
+    "image.advanced": "Opciones avanzadas",
+    "image.canvasSize": "Tamaño del lienzo",
+    "image.fontScale": "Escala de fuente",
+    "image.lineWidth": "Grosor de línea",
+
+    // Grid page
+    "grid.title": "Personas",
+    "grid.search": "Buscar por nombre, lugar, fecha...",
 
     // Nav (extra)
     "nav.admin": "Admin",
+    "nav.grid": "Tabla",
     "nav.switchToUser": "Cambiar a vista de usuario",
     "nav.switchToAdmin": "Cambiar a vista de admin",
     "nav.adminBadge": "👑 Admin",
@@ -341,6 +435,42 @@ const translations = {
     "admin.roleAdmin": "admin",
     "admin.roleUser": "usuario",
 
+    // Geni
+    "nav.geni": "Geni",
+    "geni.title": "Búsqueda en Geni.com",
+    "geni.connect": "Conectar con Geni",
+    "geni.connected": "Conectado a Geni",
+    "geni.search": "Buscar por nombre...",
+    "geni.searching": "Buscando...",
+    "geni.noResults": "No se encontraron perfiles",
+    "geni.import": "Importar",
+    "geni.importFamily": "Importar con familia",
+    "geni.importing": "Importando...",
+    "geni.imported": "¡Importado!",
+    "geni.viewProfile": "Ver perfil",
+    "geni.family": "Familia",
+    "geni.parents": "Progenitores",
+    "geni.spouses": "Cónyuges",
+    "geni.children": "Hijos/as",
+
+    // Story
+    "story.loading": "Preparando la historia familiar...",
+    "story.title": "Historia Familiar",
+    "story.play": "Reproducir",
+    "story.pause": "Pausar",
+    "story.exit": "Salir",
+    "story.speed": "Velocidad",
+    "story.generation": "Generación",
+    "story.theirDaughter": "Su hija...",
+    "story.theirSon": "Su hijo...",
+    "story.theirChild": "Su hijo/a...",
+    "story.marriedTo": "Se casó con...",
+    "story.viewStory": "Ver historia",
+    "story.child": "hijo/a",
+    "story.children": "hijos/as",
+    "story.noSlides": "No hay diapositivas",
+    "story.familyDefault": "Familia",
+
     // Dev
     "dev.nodeJson": "JSON del nodo",
     "dev.relJson": "JSON de relaciones",
@@ -358,13 +488,13 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("locale") as Locale;
-      if (saved === "en" || saved === "es") return saved;
-    }
-    return "en";
-  });
+  const [locale, setLocaleState] = useState<Locale>("en");
+
+  // Sync from localStorage after mount to avoid SSR hydration mismatch
+  useEffect(() => {
+    const saved = localStorage.getItem("locale") as Locale;
+    if (saved === "en" || saved === "es") setLocaleState(saved);
+  }, []);
 
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);

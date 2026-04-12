@@ -3,3 +3,8 @@
 pages/__pycache__/
 __pycache__/
 lib/
+backups/
+*.gml
+.env
+*.pem
+*.key

@@ -3,8 +3,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from backend.app.models import RelationshipCreate, RelationshipDeactivate
 from backend.app.dependencies import get_tree
+from backend.app.auth import require_auth
 
-router = APIRouter(prefix="/api/relationships", tags=["relationships"])
+router = APIRouter(prefix="/api/relationships", tags=["relationships"], dependencies=[Depends(require_auth)])
 
 
 @router.get("")
@@ -35,3 +36,32 @@ def deactivate_relationship(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"source": source_id, "target": target_id, "deactivated": True}
+
+
+@router.put("/{source_id}/{target_id}/reactivate")
+def reactivate_relationship(
+    source_id: str, target_id: str, tree=Depends(get_tree)
+):
+    """Re-activate a previously deactivated relationship."""
+    try:
+        tree.reactivate_relationship(source_id, target_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"source": source_id, "target": target_id, "reactivated": True}
+
+
+@router.post("/activate-all")
+def activate_all_relationships(tree=Depends(get_tree)):
+    """Set all relationships to active."""
+    tree.activate_all_relationships()
+    return {"activated": True}
+
+
+@router.delete("/{source_id}/{target_id}")
+def delete_relationship(source_id: str, target_id: str, tree=Depends(get_tree)):
+    """Permanently delete a relationship between two persons."""
+    try:
+        tree.delete_relationship(source_id, target_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"source": source_id, "target": target_id, "deleted": True}

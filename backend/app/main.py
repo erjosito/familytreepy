@@ -5,14 +5,20 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
-from backend.app.routers import persons, relationships, graph, auth_router
+from backend.app.routers import persons, relationships, graph, auth_router, geni
 
 app = FastAPI(
     title="Family Tree API",
     description="API for creating and browsing family trees",
     version="0.1.0",
 )
+
+# Rate limiting
+app.state.limiter = auth_router.limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,6 +32,8 @@ app.include_router(auth_router.router)
 app.include_router(persons.router)
 app.include_router(relationships.router)
 app.include_router(graph.router)
+app.include_router(graph.public_router)
+app.include_router(geni.router)
 
 
 @app.get("/api/health")

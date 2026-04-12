@@ -5,8 +5,29 @@ import uuid
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from backend.app.models import PersonCreate, PersonUpdate, PersonResponse
 from backend.app.dependencies import get_tree
+from backend.app.auth import require_auth
 
-router = APIRouter(prefix="/api/persons", tags=["persons"])
+router = APIRouter(prefix="/api/persons", tags=["persons"], dependencies=[Depends(require_auth)])
+
+_MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
+
+
+async def _validate_image_upload(file: UploadFile) -> bytes:
+    """Validate image upload: extension, content-type, and size."""
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File extension '{ext}' not allowed. Allowed: {', '.join(sorted(_ALLOWED_EXTENSIONS))}",
+        )
+    content_type = (file.content_type or "").lower()
+    if content_type and not content_type.startswith("image/") and content_type != "application/octet-stream":
+        raise HTTPException(status_code=400, detail=f"Content-Type '{content_type}' not allowed. Expected image/*")
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail="File exceeds 10 MB limit")
+    return content
 
 
 @router.get("", response_model=list[dict])
@@ -67,6 +88,8 @@ async def upload_profile_pic(person_id: str, file: UploadFile = File(...), tree=
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
 
+    content = await _validate_image_upload(file)
+
     account = os.getenv("AZURE_STORAGE_ACCOUNT", "")
     key = os.getenv("AZURE_STORAGE_KEY", "")
     container = os.getenv("AZURE_STORAGE_PICS_CONTAINER", "familytreepics")
@@ -83,7 +106,6 @@ async def upload_profile_pic(person_id: str, file: UploadFile = File(...), tree=
         blob_client = BlobServiceClient.from_connection_string(conn_str).get_blob_client(
             container=container, blob=blob_name
         )
-        content = await file.read()
         blob_client.upload_blob(content, overwrite=True)
         blob_url = f"https://{account}.blob.core.windows.net/{container}/{blob_name}"
         tree.add_profile_picture(person_id, blob_url)
@@ -105,6 +127,8 @@ async def upload_picture(
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
 
+    content = await _validate_image_upload(file)
+
     account = os.getenv("AZURE_STORAGE_ACCOUNT", "")
     key = os.getenv("AZURE_STORAGE_KEY", "")
     container = os.getenv("AZURE_STORAGE_PICS_CONTAINER", "familytreepics")
@@ -121,7 +145,6 @@ async def upload_picture(
         blob_client = BlobServiceClient.from_connection_string(conn_str).get_blob_client(
             container=container, blob=blob_name
         )
-        content = await file.read()
         blob_client.upload_blob(content, overwrite=True)
         blob_url = f"https://{account}.blob.core.windows.net/{container}/{blob_name}"
         tree.add_picture(person_id, blob_url)
@@ -162,6 +185,99 @@ def remove_picture(person_id: str, body: _RemovePicRequest, tree=Depends(get_tre
         raise HTTPException(status_code=404, detail="Person not found")
     tree.remove_picture(person_id, body.url)
     return {"removed": True}
+
+
+class _PeopleInPicRequest(_BaseModel):
+    url: str
+
+
+@router.post("/{person_id}/pictures/people")
+def get_people_in_picture(person_id: str, body: _PeopleInPicRequest, tree=Depends(get_tree)):
+    """Return all persons tagged in a picture."""
+    return tree.get_people_in_picture(body.url)
+
+
+class _UntagRequest(_BaseModel):
+    url: str
+    person_id: str
+
+
+@router.put("/{person_id}/pictures/untag")
+def untag_picture(person_id: str, body: _UntagRequest, tree=Depends(get_tree)):
+    """Remove a picture URL from a specific person's pictures list (untag)."""
+    target = tree.get_person(body.person_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target person not found")
+    tree.remove_picture(body.person_id, body.url)
+    return {"url": body.url, "untagged": body.person_id}
+
+
+# ---- Notes -----------------------------------------------------------------
+
+import json as _json
+from datetime import datetime, timezone
+
+
+class _NoteCreate(_BaseModel):
+    text: str
+    author: str
+
+
+class _NoteDelete(_BaseModel):
+    index: int
+
+
+def _get_notes(tree, person_id: str) -> list[dict]:
+    """Parse the notes JSON string from a person node."""
+    raw = tree.graph.nodes[person_id].get("notes_json", "[]")
+    try:
+        return _json.loads(raw) if isinstance(raw, str) else []
+    except (ValueError, TypeError):
+        return []
+
+
+def _save_notes(tree, person_id: str, notes: list[dict]) -> None:
+    """Serialize notes back to the person node."""
+    tree.graph.nodes[person_id]["notes_json"] = _json.dumps(notes)
+    if tree.autosave:
+        tree.save()
+
+
+@router.get("/{person_id}/notes")
+def get_notes(person_id: str, tree=Depends(get_tree)):
+    """Get all notes for a person."""
+    if tree.get_person(person_id) is None:
+        raise HTTPException(status_code=404, detail="Person not found")
+    return _get_notes(tree, person_id)
+
+
+@router.post("/{person_id}/notes", status_code=201)
+def add_note(person_id: str, body: _NoteCreate, tree=Depends(get_tree)):
+    """Add a note to a person."""
+    if tree.get_person(person_id) is None:
+        raise HTTPException(status_code=404, detail="Person not found")
+    notes = _get_notes(tree, person_id)
+    note = {
+        "text": body.text,
+        "author": body.author,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    notes.append(note)
+    _save_notes(tree, person_id, notes)
+    return note
+
+
+@router.delete("/{person_id}/notes/{note_index}")
+def delete_note(person_id: str, note_index: int, tree=Depends(get_tree)):
+    """Delete a note by index."""
+    if tree.get_person(person_id) is None:
+        raise HTTPException(status_code=404, detail="Person not found")
+    notes = _get_notes(tree, person_id)
+    if note_index < 0 or note_index >= len(notes):
+        raise HTTPException(status_code=404, detail="Note not found")
+    notes.pop(note_index)
+    _save_notes(tree, person_id, notes)
+    return {"deleted": True}
 
 
 @router.delete("/{person_id}")

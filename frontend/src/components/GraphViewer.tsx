@@ -291,7 +291,7 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
 
   const handleTap = useCallback(
     (e: EventObject) => {
-      if (e.target !== cyRef.current && e.target.isNode()) {
+      if (cyRef.current && e.target !== cyRef.current && e.target.isNode()) {
         onNodeClick?.(e.target.id());
       }
     },
@@ -301,7 +301,7 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
     // Proxy profile pics through the backend to avoid browser CORS on canvas
     const proxyUrl = (url: string | undefined) => {
       if (!url) return undefined;
@@ -314,9 +314,10 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
         return {
           data: {
             id: n.id,
-            label: n.fullname || "?",
+            label: (n.fullname || "?") + (!n.isAlive && n.isAlive !== undefined ? " ✝" : ""),
             profilepicUrl: picUrl || "",
             hasPic: n.profilepic ? "yes" : "no",
+            isDeceased: !n.isAlive && n.isAlive !== undefined ? "yes" : "no",
             level: typeof n.level === "number" ? n.level : 0,
           },
         };
@@ -333,7 +334,7 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
     ];
 
     if (cyRef.current) {
-      cyRef.current.destroy();
+      try { cyRef.current.destroy(); } catch { /* already destroyed */ }
     }
 
     const defaultEdgeColor = "#888";
@@ -411,6 +412,16 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
             "border-color": "#2563eb",
           },
         },
+        // Deceased indicator: subtle dark cross badge
+        {
+          selector: 'node[isDeceased = "yes"]',
+          style: {
+            "border-width": 2,
+            "border-color": "#555",
+            "border-style": "solid",
+            opacity: 0.8,
+          } as cytoscape.Css.Node,
+        },
       ],
       layout: getLayoutConfig(layout, elements),
     });
@@ -418,7 +429,7 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
     cyRef.current.on("tap", "node", handleTap);
 
     return () => {
-      cyRef.current?.destroy();
+      try { cyRef.current?.destroy(); } catch { /* ignore */ }
       cyRef.current = null;
     };
   }, [data, layout, sasToken, relationshipColors, handleTap]);
@@ -442,17 +453,19 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
       const modelX = (renderX - pan.x) / zoom;
       const modelY = (renderY - pan.y) / zoom;
       // Find closest node within a reasonable radius
-      let closest: { id: string; dist: number } | null = null;
+      let closestId: string | null = null;
+      let closestDist = Infinity;
       const hitRadius = 30 / zoom;
       cy.nodes().forEach((node) => {
         const np = node.position();
         const dist = Math.sqrt((np.x - modelX) ** 2 + (np.y - modelY) ** 2);
-        if (dist < hitRadius && (!closest || dist < closest.dist)) {
-          closest = { id: node.id(), dist };
+        if (dist < hitRadius && dist < closestDist) {
+          closestId = node.id();
+          closestDist = dist;
         }
       });
-      if (closest) {
-        onContextMenu(closest.id, e.pageX, e.pageY);
+      if (closestId) {
+        onContextMenu(closestId, e.pageX, e.pageY);
       }
     };
     el.addEventListener("contextmenu", handleNativeContextMenu, { capture: true });

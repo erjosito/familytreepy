@@ -5,16 +5,22 @@
 # ============================================================
 
 # ── Stage 1: Build Next.js static export ────────────────────
-FROM node:20-alpine AS frontend-build
+FROM node:20 AS frontend-build
 
 WORKDIR /build
 
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci
 
 COPY frontend/ ./
+# NEXT_PUBLIC_API_URL is empty so the frontend uses relative URLs (same origin)
 ENV NEXT_PUBLIC_API_URL=""
-RUN npm run build
+# Auth env vars must be set at build time for Next.js static export
+ARG NEXT_PUBLIC_AZURE_AD_CLIENT_ID=""
+ARG NEXT_PUBLIC_AZURE_AD_TENANT_ID=""
+ENV NEXT_PUBLIC_AZURE_AD_CLIENT_ID=$NEXT_PUBLIC_AZURE_AD_CLIENT_ID
+ENV NEXT_PUBLIC_AZURE_AD_TENANT_ID=$NEXT_PUBLIC_AZURE_AD_TENANT_ID
+RUN npx next build
 # output: 'export' produces ./out/
 
 # ── Stage 2: Python backend + static files ──────────────────
@@ -40,5 +46,8 @@ COPY --from=frontend-build /build/out ./static/
 EXPOSE 8000
 
 ENV PYTHONUNBUFFERED=1
+
+RUN useradd -r -s /bin/false appuser
+USER appuser
 
 CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

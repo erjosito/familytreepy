@@ -30,6 +30,11 @@ export default function NavBar({ userName, onLogout }: NavBarProps) {
           {t("nav.image")}
         </Link>
         {adminView && (
+          <Link href="/grid/" className="text-gray-700 hover:text-blue-600">
+            {t("nav.grid")}
+          </Link>
+        )}
+        {adminView && (
           <Link href="/admin/" className="text-gray-700 hover:text-blue-600">
             {t("nav.admin")}
           </Link>

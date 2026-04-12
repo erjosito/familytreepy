@@ -1,13 +1,25 @@
 """Graph, schema, renderer, and import endpoints."""
 
 import os
+import re
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import Response
 from backend.app.models import GraphResponse, ImportGmlRequest
 from backend.app.dependencies import get_tree, get_person_schema, get_relationship_schema
 from backend.app.renderers import RendererRegistry
+from backend.app.auth import require_auth
 
-router = APIRouter(prefix="/api", tags=["graph"])
+router = APIRouter(prefix="/api", tags=["graph"], dependencies=[Depends(require_auth)])
+
+# Separate router for endpoints that don't require auth (e.g., image proxy used by Cytoscape)
+public_router = APIRouter(prefix="/api", tags=["graph-public"])
+
+# Regex for detecting private/reserved IP addresses in hostnames
+_PRIVATE_IP_RE = re.compile(
+    r"^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|127\.|0\.0\.0\.0|localhost)"
+)
 
 
 def _get_sas_token() -> str:
@@ -63,9 +75,19 @@ def get_storage_config():
     return {"sas_token": _get_sas_token()}
 
 
-@router.get("/proxy/image")
+@public_router.get("/proxy/image")
 def proxy_image(url: str):
     """Proxy an Azure Blob image to avoid browser CORS issues."""
+    # Validate the URL: HTTPS only, Azure Blob Storage domains only
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise HTTPException(status_code=400, detail="Only HTTPS URLs are allowed")
+    hostname = (parsed.hostname or "").lower()
+    if _PRIVATE_IP_RE.match(hostname):
+        raise HTTPException(status_code=400, detail="Private/reserved addresses are not allowed")
+    if not hostname.endswith(".blob.core.windows.net"):
+        raise HTTPException(status_code=400, detail="Only Azure Blob Storage URLs are allowed")
+
     import requests as req
     sas = _get_sas_token()
     full_url = f"{url}?{sas}" if sas and "?" not in url else url
@@ -85,10 +107,11 @@ def import_gml(body: ImportGmlRequest, tree=Depends(get_tree)):
     import os
     from familytree import FamilyTree
 
-    account = body.azstorage_account or os.getenv("AZURE_STORAGE_ACCOUNT")
-    key = body.azstorage_key or os.getenv("AZURE_STORAGE_KEY")
+    # Use server-configured credentials only (never accept credentials in request body)
+    account = os.getenv("AZURE_STORAGE_ACCOUNT")
+    key = os.getenv("AZURE_STORAGE_KEY")
     if not account or not key:
-        raise HTTPException(status_code=400, detail="Azure Storage credentials required")
+        raise HTTPException(status_code=400, detail="Azure Storage credentials not configured on server")
 
     try:
         source = FamilyTree(
@@ -126,6 +149,11 @@ def generate_image(
     root_id: str,
     degree: int = 3,
     renderer: str = "classical_tree",
+    canvas_width: int = 2000,
+    canvas_height: int = 1500,
+    font_scale: float = 1.0,
+    line_width: int = 2,
+    color_scheme: str = "sepia",
     tree=Depends(get_tree),
 ):
     """Generate a high-resolution image of a graph section."""
@@ -137,7 +165,14 @@ def generate_image(
         raise HTTPException(status_code=404, detail=f"Person '{root_id}' not found")
     subgraph = tree.get_subgraph_degrees(root_id, degree=degree)
     sas = _get_sas_token()
-    opts: dict = {"root_id": root_id}
+    opts: dict = {
+        "root_id": root_id,
+        "canvas_width": canvas_width,
+        "canvas_height": canvas_height,
+        "font_scale": font_scale,
+        "line_width": line_width,
+        "color_scheme": color_scheme,
+    }
     if sas:
         opts["azure_storage_sas"] = sas
     image_bytes = r.render(subgraph, options=opts)
