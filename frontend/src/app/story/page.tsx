@@ -19,7 +19,6 @@ type TFunc = (key: any) => string;
 interface TitleSlide {
   kind: "title";
   familyName: string;
-  dateRange: string;
 }
 
 interface PersonSlide {
@@ -51,6 +50,16 @@ interface TreeContextSlide {
   parents: string[];
   spouses: string[];
   children: string[];
+  centerId?: string;
+  centerName?: string;
+  centerRelation?: string; // e.g. "grandchild", "parent", "sibling"
+}
+
+interface FullTreeSlide {
+  kind: "fulltree";
+  persons: PersonNode[];
+  edges: { source: string; target: string; type: string }[];
+  centerId: string;
 }
 
 interface TransitionSlide {
@@ -64,6 +73,7 @@ type Slide =
   | PhotosSlide
   | NotesSlide
   | TreeContextSlide
+  | FullTreeSlide
   | TransitionSlide;
 
 /* ------------------------------------------------------------------ */
@@ -100,15 +110,18 @@ function buildSlides(
     } else if (e.type === "isSpouseOf") {
       if (!spouseOf.has(e.source)) spouseOf.set(e.source, new Set());
       spouseOf.get(e.source)!.add(e.target);
+      if (!spouseOf.has(e.target)) spouseOf.set(e.target, new Set());
+      spouseOf.get(e.target)!.add(e.source);
     }
   }
 
-  // Filter to direct lineage: ancestors, descendants, and their spouses
+  // Filter to direct lineage only
   let includedIds: Set<string>;
+  let centerSpouseIds = new Set<string>();
   if (centerId && persons.has(centerId)) {
     includedIds = new Set<string>();
 
-    // Walk up: all ancestors
+    // Walk up: all direct ancestors
     const walkUp = (id: string) => {
       if (includedIds.has(id)) return;
       includedIds.add(id);
@@ -117,7 +130,7 @@ function buildSlides(
       }
     };
 
-    // Walk down: all descendants
+    // Walk down: all direct descendants
     const walkDown = (id: string) => {
       if (includedIds.has(id)) return;
       includedIds.add(id);
@@ -127,9 +140,12 @@ function buildSlides(
     };
 
     walkUp(centerId);
-    walkDown(centerId);
+    // walkDown must re-process centerId even though walkUp already added it
+    for (const childId of parentOf.get(centerId) || []) {
+      walkDown(childId);
+    }
 
-    // Add siblings of the center person
+    // Add siblings of the center person (but NOT their spouses)
     const centerParents = childOf.get(centerId) || [];
     for (const parentId of centerParents) {
       for (const siblingId of parentOf.get(parentId) || []) {
@@ -137,52 +153,121 @@ function buildSlides(
       }
     }
 
-    // Add spouses of all included persons (but not their extended families)
-    const directIds = new Set(includedIds);
-    for (const id of directIds) {
-      for (const spouseId of spouseOf.get(id) || []) {
-        includedIds.add(spouseId);
-      }
+    // Add ONLY the center person's spouse(s)
+    for (const spouseId of spouseOf.get(centerId) || []) {
+      includedIds.add(spouseId);
+      centerSpouseIds.add(spouseId);
     }
+
+    // Add spouses of ancestors only (to show in mini-tree, but they appear in data)
+    // We do NOT add spouses of siblings or descendants
   } else {
     includedIds = new Set(persons.keys());
   }
 
-  // Sort filtered persons by level (ascending = oldest first), then by fullname
-  const sorted = [...persons.values()]
-    .filter((p) => includedIds.has(p.id))
-    .sort((a, b) => {
-      const la = a.level ?? 999;
-      const lb = b.level ?? 999;
-      if (la !== lb) return la - lb;
-      return (a.fullname || "").localeCompare(b.fullname || "");
-    });
-
-  if (sorted.length === 0) return slides;
-
-  // Title slide
-  const familyNames = new Set<string>();
-  let earliestYear: number | null = null;
-  let latestYear: number | null = null;
-
-  for (const p of sorted) {
-    if (p.lastname) familyNames.add(p.lastname);
-    const year = extractYear(p.birthdate);
-    if (year !== null) {
-      if (earliestYear === null || year < earliestYear) earliestYear = year;
-      if (latestYear === null || year > latestYear) latestYear = year;
+  // Custom ordering: ancestors → siblings → center → spouse → descendants (grouped by family)
+  const centerLevel = centerId ? (persons.get(centerId)?.level ?? 0) : 0;
+  const siblingIds = new Set<string>();
+  if (centerId) {
+    const centerParentIds = childOf.get(centerId) || [];
+    for (const parentId of centerParentIds) {
+      for (const sibId of parentOf.get(parentId) || []) {
+        if (sibId !== centerId) siblingIds.add(sibId);
+      }
     }
   }
 
-  const familyName = [...familyNames].join(" · ") || t("story.familyDefault");
-  const dateRange =
-    earliestYear && latestYear
-      ? `${earliestYear} – ${latestYear}`
-      : earliestYear
-        ? `${earliestYear} –`
-        : "";
+  // Build ordered list by walking the tree
+  const orderedIds: string[] = [];
+  const addedIds = new Set<string>();
 
-  slides.push({ kind: "title", familyName, dateRange });
+  const addPerson = (id: string) => {
+    if (addedIds.has(id) || !includedIds.has(id)) return;
+    addedIds.add(id);
+    orderedIds.push(id);
+  };
+
+  // Walk descendants depth-first, grouping siblings together
+  const walkDescendants = (id: string) => {
+    const kids = (parentOf.get(id) || []).filter(cid => includedIds.has(cid));
+    // Also include children of spouse
+    for (const spouseId of spouseOf.get(id) || []) {
+      for (const cid of parentOf.get(spouseId) || []) {
+        if (includedIds.has(cid) && !kids.includes(cid)) {
+          kids.push(cid);
+        }
+      }
+    }
+    // Sort siblings alphabetically within a family
+    kids.sort((a, b) => ((persons.get(a)?.fullname || "").localeCompare(persons.get(b)?.fullname || "")));
+    for (const kid of kids) {
+      addPerson(kid);
+      walkDescendants(kid);
+    }
+  };
+
+  if (centerId) {
+    // 1. Ancestors (sorted by level ascending, oldest first)
+    const ancestors = [...persons.values()]
+      .filter(p => includedIds.has(p.id) && (p.level ?? 0) < centerLevel && !siblingIds.has(p.id) && p.id !== centerId)
+      .sort((a, b) => {
+        const la = a.level ?? 0;
+        const lb = b.level ?? 0;
+        if (la !== lb) return la - lb;
+        return (a.fullname || "").localeCompare(b.fullname || "");
+      });
+    for (const a of ancestors) addPerson(a.id);
+
+    // 2. Siblings (same generation, before center)
+    const sibs = [...siblingIds]
+      .filter(id => persons.has(id))
+      .sort((a, b) => ((persons.get(a)?.fullname || "").localeCompare(persons.get(b)?.fullname || "")));
+    for (const s of sibs) addPerson(s);
+
+    // 3. Center person
+    addPerson(centerId);
+
+    // 4. Center person's spouse(s)
+    for (const spouseId of centerSpouseIds) addPerson(spouseId);
+
+    // 5. Descendants (depth-first walk, siblings grouped)
+    walkDescendants(centerId);
+  } else {
+    // No center — just sort by level
+    const all = [...persons.values()].sort((a, b) => {
+      const la = a.level ?? 0;
+      const lb = b.level ?? 0;
+      if (la !== lb) return la - lb;
+      return (a.fullname || "").localeCompare(b.fullname || "");
+    });
+    for (const p of all) addPerson(p.id);
+  }
+
+  const sorted = orderedIds
+    .map(id => persons.get(id))
+    .filter((p): p is PersonNode => p !== undefined);
+
+  if (sorted.length === 0) return slides;
+
+  // Title slide — use center person's name
+  const centerPerson = centerId ? persons.get(centerId) : null;
+  const familyName = centerPerson?.fullname || t("story.familyDefault");
+
+  slides.push({ kind: "title", familyName });
+
+  // Full tree overview slide
+  if (centerId) {
+    const treeEdges = edges
+      .filter(e => e.type === "isChildOf" || e.type === "isSpouseOf")
+      .filter(e => includedIds.has(e.source) && includedIds.has(e.target))
+      .map(e => ({ source: e.source, target: e.target, type: e.type }));
+    slides.push({
+      kind: "fulltree",
+      persons: sorted,
+      edges: treeEdges,
+      centerId,
+    });
+  }
 
   // Build child count map
   const childCountMap = new Map<string, number>();
@@ -192,13 +277,27 @@ function buildSlides(
     }
   }
 
+  // Build a map of picture URL → set of person IDs who have that picture
+  // so we can defer shared pictures to the latest person in the story
+  const picOwners = new Map<string, Set<string>>();
+  for (const p of sorted) {
+    if (p.pictures) {
+      for (const url of p.pictures) {
+        if (!picOwners.has(url)) picOwners.set(url, new Set());
+        picOwners.get(url)!.add(p.id);
+      }
+    }
+  }
+  // Track which pictures have already been shown
+  const shownPics = new Set<string>();
+
   for (let i = 0; i < sorted.length; i++) {
     const p = sorted[i];
 
     // Transition slide (between persons, not before the first)
     if (i > 0) {
       const prev = sorted[i - 1];
-      const transitionText = getTransitionText(prev, p, childOf, spouseOf, persons, t);
+      const transitionText = getTransitionText(prev, p, childOf, parentOf, spouseOf, persons, t, centerId);
       slides.push({ kind: "transition", text: transitionText });
     }
 
@@ -208,14 +307,42 @@ function buildSlides(
     const personChildren = (parentOf.get(p.id) || []).map(id => persons.get(id)?.fullname || "").filter(Boolean);
 
     // Tree context slide first — shows where the person fits
+    const relativeLevel = (p.level ?? 0) - centerLevel;
+    const ctrPerson = centerId ? persons.get(centerId) : undefined;
+    const ctrName = ctrPerson?.alias || ctrPerson?.firstname || ctrPerson?.fullname || "";
+    // Determine relationship label between this person and center
+    let centerRelation = "";
+    if (centerId && p.id !== centerId) {
+      const lvDiff = relativeLevel;
+      if (lvDiff < 0) {
+        // Person is an ancestor of center
+        const gen = Math.abs(lvDiff);
+        centerRelation = gen === 1 ? (isFemale(persons.get(p.id)) ? t("story.motherOf") : t("story.fatherOf"))
+          : gen === 2 ? (isFemale(persons.get(p.id)) ? t("story.grandmotherOf") : t("story.grandfatherOf"))
+          : t("story.ancestorOf");
+      } else if (lvDiff === 0 && siblingIds.has(p.id)) {
+        centerRelation = isFemale(persons.get(p.id)) ? t("story.sisterOf") : t("story.brotherOf");
+      } else if (lvDiff === 0 && centerSpouseIds.has(p.id)) {
+        centerRelation = t("story.spouseOf");
+      } else if (lvDiff > 0) {
+        const gen = lvDiff;
+        centerRelation = gen === 1 ? (isFemale(persons.get(p.id)) ? t("story.daughter") : t("story.son"))
+          : gen === 2 ? (isFemale(persons.get(p.id)) ? t("story.granddaughterOf") : t("story.grandsonOf"))
+          : t("story.descendantOf");
+      }
+    }
+
     slides.push({
       kind: "context",
       person: p,
-      level: p.level ?? 0,
+      level: relativeLevel,
       childCount: childCountMap.get(p.id) || 0,
       parents: personParents,
       spouses: personSpouses,
       children: personChildren,
+      centerId,
+      centerName: ctrName,
+      centerRelation,
     });
 
     // Then the person intro slide
@@ -228,14 +355,25 @@ function buildSlides(
       children: personChildren,
     });
 
-    // Photos slides — max 3 per slide, each photo gets Ken Burns treatment
+    // Photos slides — only show pictures not shared with persons appearing later
     if (p.pictures && p.pictures.length > 0) {
-      for (let j = 0; j < p.pictures.length; j += 3) {
-        slides.push({
-          kind: "photos",
-          person: p,
-          pictures: p.pictures.slice(j, j + 3),
-        });
+      const laterIds = new Set(sorted.slice(i + 1).map(s => s.id));
+      const uniquePics = p.pictures.filter(url => {
+        if (shownPics.has(url)) return false; // already shown
+        const owners = picOwners.get(url);
+        // Skip if any later person also has this picture
+        if (owners && [...owners].some(oid => laterIds.has(oid))) return false;
+        return true;
+      });
+      for (const url of uniquePics) shownPics.add(url);
+      if (uniquePics.length > 0) {
+        for (let j = 0; j < uniquePics.length; j += 3) {
+          slides.push({
+            kind: "photos",
+            person: p,
+            pictures: uniquePics.slice(j, j + 3),
+          });
+        }
       }
     }
 
@@ -253,41 +391,121 @@ function buildSlides(
   return slides;
 }
 
+function isFemale(person: PersonNode | undefined): boolean {
+  if (!person) return false;
+  return person.gender === "female";
+}
+
 function getTransitionText(
   prev: PersonNode,
   current: PersonNode,
   childOf: Map<string, string[]>,
+  parentOf: Map<string, string[]>,
   spouseOf: Map<string, Set<string>>,
   persons: Map<string, PersonNode>,
   t: TFunc,
+  centerId?: string,
 ): string {
-  // Check if current is a child of prev
+  const currentPerson = persons.get(current.id);
+  const prevPerson = persons.get(prev.id);
+  const curName = currentPerson?.alias || currentPerson?.firstname || currentPerson?.fullname || "";
+  const prevName = prevPerson?.alias || prevPerson?.firstname || prevPerson?.fullname || "";
+
+  // Helper: get both parent names for a person
+  const getParentNames = (personId: string): string => {
+    const parentIds = childOf.get(personId) || [];
+    const names = parentIds
+      .map(pid => persons.get(pid)?.alias || persons.get(pid)?.firstname || persons.get(pid)?.fullname || "")
+      .filter(Boolean);
+    if (names.length === 2) return `${names[0]} ${t("story.and")} ${names[1]}`;
+    if (names.length === 1) return names[0];
+    return "";
+  };
+
+  // Helper: describe relationship to center person
+  const centerName = centerId ? (persons.get(centerId)?.alias || persons.get(centerId)?.firstname || persons.get(centerId)?.fullname || "") : "";
+
+  // Center person gets a special introduction
+  if (centerId && current.id === centerId) {
+    const prot = isFemale(currentPerson) ? t("story.protagonistF") : t("story.protagonistM");
+    return `${curName}, ${prot}`;
+  }
+
+  // Check if current is a child of prev (or prev's spouse)
   const currentParents = childOf.get(current.id) || [];
-  if (currentParents.includes(prev.id)) {
-    const person = persons.get(current.id);
-    // Heuristic: check firstname for gendered names (common in Spanish)
-    // Default to generic "their child"
-    const name = person?.firstname?.toLowerCase() || "";
-    // Simple heuristic for gendered transition
-    if (name.endsWith("a") || name.endsWith("ía") || name.endsWith("na")) {
-      return t("story.theirDaughter");
+  const isPrevParent = currentParents.includes(prev.id);
+  const isPrevSpouseParent = !isPrevParent && [...(spouseOf.get(prev.id) || [])].some(sid => currentParents.includes(sid));
+
+  if (isPrevParent || isPrevSpouseParent) {
+    const rel = isFemale(currentPerson) ? t("story.daughter") : t("story.son");
+    const parentStr = getParentNames(current.id);
+    return `${curName}, ${rel} ${parentStr}`;
+  }
+
+  // Check if current is a sibling of prev (same parents, grouped together)
+  const prevParents = childOf.get(prev.id) || [];
+  const sharedParent = currentParents.find(pid => prevParents.includes(pid));
+  if (sharedParent && current.id !== prev.id) {
+    // They're siblings — show as child of parents + sibling of prev
+    const rel = isFemale(currentPerson) ? t("story.daughter") : t("story.son");
+    const parentStr = getParentNames(current.id);
+    const sibRel = isFemale(currentPerson) ? t("story.sisterOf") : t("story.brotherOf");
+    return `${curName}, ${rel} ${parentStr} ${t("story.and")} ${sibRel} ${prevName}`;
+  }
+
+  // Check if current has parents that are in the story (grandchild etc.)
+  if (currentParents.length > 0) {
+    const parentInStory = currentParents.find(pid => persons.has(pid));
+    if (parentInStory) {
+      const rel = isFemale(currentPerson) ? t("story.daughter") : t("story.son");
+      const parentStr = getParentNames(current.id);
+      return `${curName}, ${rel} ${parentStr}`;
     }
-    return t("story.theirSon");
   }
 
   // Check if current is spouse of prev
-  if (spouseOf.get(prev.id)?.has(current.id) || spouseOf.get(current.id)?.has(prev.id)) {
-    return t("story.marriedTo");
+  if (spouseOf.get(prev.id)?.has(current.id)) {
+    return `${prevName} ${t("story.marriedTo")} ${curName}`;
   }
 
-  // Check if prev is a child of current (going up)
-  const prevParents = childOf.get(prev.id) || [];
+  // Check if prev is a child of current (going up the tree)
   if (prevParents.includes(current.id)) {
-    return t("story.marriedTo");
+    const rel = isFemale(currentPerson) ? t("story.motherOf") : t("story.fatherOf");
+    return `${curName}, ${rel} ${prevName}`;
   }
 
-  // Default: just a generic transition
-  return "•  •  •";
+  // Check if they are siblings (share a parent)
+  const prevParentSet = new Set(prevParents);
+  for (const parentId of currentParents) {
+    if (prevParentSet.has(parentId)) {
+      const childRel = isFemale(currentPerson) ? t("story.daughter") : t("story.son");
+      const sibRel = isFemale(currentPerson) ? t("story.sisterOf") : t("story.brotherOf");
+      const parentStr = getParentNames(current.id);
+
+      // Find all siblings (children of same parents, excluding current)
+      const siblingNames: string[] = [];
+      for (const pid of currentParents) {
+        for (const sibId of (parentOf.get(pid) || [])) {
+          if (sibId !== current.id) {
+            const sibPerson = persons.get(sibId);
+            const sibName = sibPerson?.alias || sibPerson?.firstname || sibPerson?.fullname || "";
+            if (sibName && !siblingNames.includes(sibName)) {
+              siblingNames.push(sibName);
+            }
+          }
+        }
+      }
+
+      const sibListStr = siblingNames.length > 1
+        ? siblingNames.slice(0, -1).join(", ") + " " + t("story.and") + " " + siblingNames[siblingNames.length - 1]
+        : siblingNames[0] || prevName;
+
+      return `${curName}, ${childRel} ${parentStr} ${t("story.and")} ${sibRel} ${sibListStr}`;
+    }
+  }
+
+  // Generic
+  return `${curName}...`;
 }
 
 function extractYear(dateStr: string | undefined): number | null {
@@ -306,9 +524,6 @@ function TitleSlideView({ slide, t }: { slide: TitleSlide; t: TFunc }) {
         {slide.familyName}
       </h1>
       <p className="text-xl md:text-2xl text-gray-300 mb-6">{t("story.title")}</p>
-      {slide.dateRange && (
-        <p className="text-lg text-gray-400 font-light">{slide.dateRange}</p>
-      )}
     </div>
   );
 }
@@ -492,8 +707,9 @@ function NotesSlideView({ slide }: { slide: NotesSlide }) {
 }
 
 function TreeContextSlideView({ slide, t }: { slide: TreeContextSlide; t: TFunc }) {
-  const { person, parents, spouses, children } = slide;
+  const { person, parents, spouses, children, centerId, centerName, centerRelation } = slide;
   const personName = person.fullname || "?";
+  const isPersonCenter = centerId === person.id;
 
   // Estimate text width: ~7px per character at fontSize 13
   const charW = 7;
@@ -509,7 +725,8 @@ function TreeContextSlideView({ slide, t }: { slide: TreeContextSlide; t: TFunc 
   const hGap = 30; // gap between node edges
 
   // Build node data with dynamic widths
-  type NodeInfo = { x: number; y: number; label: string; highlight: boolean; rx: number };
+  // nodeType: "current" = this slide's person, "center" = story protagonist, "normal" = others
+  type NodeInfo = { x: number; y: number; label: string; nodeType: "current" | "center" | "normal"; rx: number };
   const allNodes: NodeInfo[] = [];
   const lines: { x1: number; y1: number; x2: number; y2: number }[] = [];
 
@@ -536,7 +753,7 @@ function TreeContextSlideView({ slide, t }: { slide: TreeContextSlide; t: TFunc 
   const parentPositions = layoutRow(parents, parentY);
   parents.forEach((name, i) => {
     const pos = parentPositions[i];
-    allNodes.push({ x: pos.x, y: parentY, label: name, highlight: false, rx: pos.rx });
+    allNodes.push({ x: pos.x, y: parentY, label: name, nodeType: "normal", rx: pos.rx });
     lines.push({ x1: pos.x, y1: parentY + nodeRy, x2: cx, y2: mainY - nodeRy });
   });
 
@@ -545,7 +762,8 @@ function TreeContextSlideView({ slide, t }: { slide: TreeContextSlide; t: TFunc 
   const mainPositions = layoutRow(mainLabels, mainY);
   mainLabels.forEach((name, i) => {
     const pos = mainPositions[i];
-    allNodes.push({ x: pos.x, y: mainY, label: name, highlight: i === 0, rx: pos.rx });
+    const nt = i === 0 ? (isPersonCenter ? "center" : "current") : "normal";
+    allNodes.push({ x: pos.x, y: mainY, label: name, nodeType: nt, rx: pos.rx });
     if (i > 0) {
       const prev = mainPositions[i - 1];
       lines.push({ x1: prev.x + prev.rx, y1: mainY, x2: pos.x - pos.rx, y2: mainY });
@@ -559,7 +777,7 @@ function TreeContextSlideView({ slide, t }: { slide: TreeContextSlide; t: TFunc 
     : cx;
   children.forEach((name, i) => {
     const pos = childPositions[i];
-    allNodes.push({ x: pos.x, y: childY, label: name, highlight: false, rx: pos.rx });
+    allNodes.push({ x: pos.x, y: childY, label: name, nodeType: "normal", rx: pos.rx });
     lines.push({ x1: parentMidX, y1: mainY + nodeRy, x2: pos.x, y2: childY - nodeRy });
   });
 
@@ -574,7 +792,7 @@ function TreeContextSlideView({ slide, t }: { slide: TreeContextSlide; t: TFunc 
   return (
     <div className="flex flex-col items-center justify-center h-full px-8">
       <p className="text-sm text-gray-400 mb-2 uppercase tracking-widest">
-        {t("story.generation")} {slide.level + 1}
+        {t("story.generation")} {slide.level > 0 ? `+${slide.level}` : slide.level}
       </p>
 
       <svg
@@ -592,28 +810,151 @@ function TreeContextSlideView({ slide, t }: { slide: TreeContextSlide; t: TFunc 
         ))}
 
         {/* Nodes */}
-        {allNodes.map((node, i) => (
-          <g key={i}>
-            <ellipse
-              cx={node.x} cy={node.y}
-              rx={node.rx} ry={nodeRy}
-              fill={node.highlight ? "#2563eb" : "#374151"}
-              stroke={node.highlight ? "#60a5fa" : "#555"}
-              strokeWidth={node.highlight ? 2 : 1}
-              opacity={0.9}
-            />
-            <text
-              x={node.x} y={node.y + 1}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill={node.highlight ? "#fff" : "#d1d5db"}
-              fontSize="13"
-              fontFamily="system-ui, sans-serif"
-            >
-              {node.label}
-            </text>
-          </g>
+        {allNodes.map((node, i) => {
+          const fills = {
+            center: { bg: "#d97706", stroke: "#fbbf24", text: "#fff", sw: 3 },
+            current: { bg: "#2563eb", stroke: "#60a5fa", text: "#fff", sw: 2 },
+            normal: { bg: "#374151", stroke: "#555", text: "#d1d5db", sw: 1 },
+          };
+          const f = fills[node.nodeType];
+          return (
+            <g key={i}>
+              <ellipse
+                cx={node.x} cy={node.y}
+                rx={node.rx} ry={nodeRy}
+                fill={f.bg} stroke={f.stroke} strokeWidth={f.sw}
+                opacity={0.9}
+              />
+              {node.nodeType === "center" && (
+                <text x={node.x} y={node.y - nodeRy - 6} textAnchor="middle" fill="#fbbf24" fontSize="14">★</text>
+              )}
+              <text
+                x={node.x} y={node.y + 1}
+                textAnchor="middle" dominantBaseline="middle"
+                fill={f.text} fontSize="13" fontFamily="system-ui, sans-serif"
+              >
+                {node.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Relationship to center person */}
+      {!isPersonCenter && centerName && centerRelation && (
+        <p className="mt-4 text-base text-amber-400 italic text-center">
+          ★ {centerRelation} {centerName}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FullTreeSlideView({ slide, t }: { slide: FullTreeSlide; t: TFunc }) {
+  const { persons, edges, centerId } = slide;
+
+  const charW = 6;
+  const nodePadding = 16;
+  const nodeRy = 18;
+  const ySpacing = 70;
+  const hGap = 20;
+  const calcRx = (label: string) => Math.max(45, (label.length * charW) / 2 + nodePadding);
+
+  // Group persons by level
+  const levels = new Map<number, PersonNode[]>();
+  for (const p of persons) {
+    const lv = p.level ?? 0;
+    if (!levels.has(lv)) levels.set(lv, []);
+    levels.get(lv)!.push(p);
+  }
+  const sortedLevels = [...levels.keys()].sort((a, b) => a - b);
+
+  // Layout each level row
+  const cx = 500;
+  const nodePositions = new Map<string, { x: number; y: number; rx: number }>();
+
+  sortedLevels.forEach((lv, row) => {
+    const rowPersons = levels.get(lv)!;
+    const labels = rowPersons.map(p => p.fullname || "?");
+    const rxs = labels.map(l => calcRx(l));
+    let totalW = 0;
+    for (let i = 0; i < rxs.length; i++) {
+      totalW += rxs[i] * 2;
+      if (i > 0) totalW += hGap;
+    }
+    let curX = cx - totalW / 2;
+    rowPersons.forEach((p, i) => {
+      const nodeX = curX + rxs[i];
+      nodePositions.set(p.id, { x: nodeX, y: row * ySpacing + 40, rx: rxs[i] });
+      curX += rxs[i] * 2 + hGap;
+    });
+  });
+
+  // Build lines from edges
+  const lineData: { x1: number; y1: number; x2: number; y2: number; type: string }[] = [];
+  const seenEdges = new Set<string>();
+  for (const e of edges) {
+    const key = `${e.source}-${e.target}-${e.type}`;
+    if (seenEdges.has(key)) continue;
+    seenEdges.add(key);
+    const sp = nodePositions.get(e.source);
+    const tp = nodePositions.get(e.target);
+    if (sp && tp) {
+      if (e.type === "isSpouseOf") {
+        const rKey = `${e.target}-${e.source}-${e.type}`;
+        seenEdges.add(rKey);
+        lineData.push({ x1: sp.x + sp.rx, y1: sp.y, x2: tp.x - tp.rx, y2: tp.y, type: e.type });
+      } else {
+        lineData.push({ x1: sp.x, y1: sp.y + nodeRy, x2: tp.x, y2: tp.y - nodeRy, type: e.type });
+      }
+    }
+  }
+
+  // Calculate viewBox
+  const allPositions = [...nodePositions.values()];
+  const minX = Math.min(...allPositions.map(p => p.x - p.rx)) - 20;
+  const maxX = Math.max(...allPositions.map(p => p.x + p.rx)) + 20;
+  const maxY = Math.max(...allPositions.map(p => p.y)) + nodeRy + 20;
+  const svgW = maxX - minX;
+  const svgH = maxY + 10;
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-4">
+      <p className="text-sm text-gray-400 mb-2 uppercase tracking-widest">{t("story.familyOverview")}</p>
+      <svg
+        viewBox={`${minX} 0 ${svgW} ${svgH}`}
+        className="w-full max-w-5xl h-auto max-h-[80vh]"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        {lineData.map((l, i) => (
+          <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+            stroke={l.type === "isSpouseOf" ? "#666" : "#555"} strokeWidth="1" opacity="0.5"
+            strokeDasharray={l.type === "isSpouseOf" ? "4 2" : "none"}
+          />
         ))}
+        {persons.map((p) => {
+          const pos = nodePositions.get(p.id);
+          if (!pos) return null;
+          const isCenter = p.id === centerId;
+          return (
+            <g key={p.id}>
+              <ellipse cx={pos.x} cy={pos.y} rx={pos.rx} ry={nodeRy}
+                fill={isCenter ? "#d97706" : "#374151"}
+                stroke={isCenter ? "#fbbf24" : "#555"}
+                strokeWidth={isCenter ? 2 : 1}
+                opacity={0.9}
+              />
+              {isCenter && (
+                <text x={pos.x} y={pos.y - nodeRy - 4} textAnchor="middle" fill="#fbbf24" fontSize="12">★</text>
+              )}
+              <text x={pos.x} y={pos.y + 1} textAnchor="middle" dominantBaseline="middle"
+                fill={isCenter ? "#fff" : "#d1d5db"} fontSize="11" fontFamily="system-ui, sans-serif"
+              >
+                {p.fullname || "?"}
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
@@ -644,6 +985,8 @@ function SlideRenderer({ slide, t }: { slide: Slide; t: TFunc }) {
       return <NotesSlideView slide={slide} />;
     case "context":
       return <TreeContextSlideView slide={slide} t={t} />;
+    case "fulltree":
+      return <FullTreeSlideView slide={slide} t={t} />;
     case "transition":
       return <TransitionSlideView slide={slide} />;
   }
@@ -660,7 +1003,6 @@ const SPEED_OPTIONS = [5, 8, 10, 15] as const;
 function StoryPageContent() {
   const searchParams = useSearchParams();
   const rootId = searchParams.get("id") || "";
-  const degree = parseInt(searchParams.get("degree") || "3", 10);
   const { t } = useI18n();
 
   const [slides, setSlides] = useState<Slide[]>([]);
@@ -686,8 +1028,8 @@ function StoryPageContent() {
 
     async function loadData() {
       try {
-        // 1. Get graph
-        const graph = await getGraph(rootId, degree, true);
+        // 1. Get full graph (no degree limit — filtering handles inclusion)
+        const graph = await getGraph(undefined, undefined, true);
 
         if (cancelled) return;
 
@@ -744,7 +1086,7 @@ function StoryPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [rootId, degree, t]);
+  }, [rootId, t]);
 
   // Navigate with fade transition
   const goToSlide = useCallback(

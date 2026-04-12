@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { listPersons, getPerson, updatePerson } from "@/lib/api";
+import { listPersons, getPerson, updatePerson, deletePerson } from "@/lib/api";
 import { useAdminView } from "@/lib/adminView";
 import { useI18n } from "@/lib/i18n";
+import { formatDate } from "@/lib/dateUtils";
 import Link from "next/link";
 
 interface PersonRow {
@@ -11,10 +12,12 @@ interface PersonRow {
   fullname: string;
   firstname: string;
   lastname: string;
+  alias: string;
   birthdate: string;
   birthplace: string;
   isAlive: boolean;
   deathdate: string;
+  gender: string;
 }
 
 export default function GridPage() {
@@ -43,16 +46,18 @@ export default function GridPage() {
               fullname: p.fullname,
               firstname: str(d.firstname),
               lastname: str(d.lastname),
+              alias: str(d.alias),
               birthdate: str(d.birthdate),
               birthplace: str(d.birthplace),
               isAlive: d.isAlive !== false && d.isAlive !== 0,
               deathdate: str(d.deathdate),
+              gender: str(d.gender),
             };
           } catch {
             return {
               id: p.id, fullname: p.fullname,
-              firstname: "", lastname: "", birthdate: "",
-              birthplace: "", isAlive: true, deathdate: "",
+              firstname: "", lastname: "", alias: "", birthdate: "",
+              birthplace: "", isAlive: true, deathdate: "", gender: "",
             };
           }
         })
@@ -84,10 +89,12 @@ export default function GridPage() {
       await updatePerson(editingId, {
         firstname: draft.firstname,
         lastname: draft.lastname,
+        alias: draft.alias,
         birthdate: draft.birthdate,
         birthplace: draft.birthplace,
         isAlive: draft.isAlive,
         deathdate: draft.isAlive ? "" : draft.deathdate,
+        gender: draft.gender,
       });
       setEditingId(null);
       await fetchAll();
@@ -140,6 +147,8 @@ export default function GridPage() {
   const columns: { key: keyof PersonRow; label: string; width: string }[] = [
     { key: "firstname", label: t("field.firstName"), width: "w-32" },
     { key: "lastname", label: t("field.lastName"), width: "w-36" },
+    { key: "alias", label: t("field.alias"), width: "w-28" },
+    { key: "gender", label: t("field.gender"), width: "w-20" },
     { key: "birthdate", label: t("field.birthdate"), width: "w-28" },
     { key: "birthplace", label: t("field.birthplace"), width: "w-36" },
     { key: "isAlive", label: t("field.status"), width: "w-24" },
@@ -206,6 +215,24 @@ export default function GridPage() {
                         </td>
                         <td className="px-3 py-1.5">
                           <input
+                            type="text" value={draft.alias || ""}
+                            onChange={(e) => setDraft({ ...draft, alias: e.target.value })}
+                            className="w-full border rounded px-2 py-1 text-sm text-gray-900"
+                          />
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <select
+                            value={draft.gender || ""}
+                            onChange={(e) => setDraft({ ...draft, gender: e.target.value })}
+                            className="w-full border rounded px-1 py-1 text-sm text-gray-900"
+                          >
+                            <option value="">—</option>
+                            <option value="male">♂</option>
+                            <option value="female">♀</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <input
                             type="text" value={draft.birthdate ?? ""}
                             onChange={(e) => setDraft({ ...draft, birthdate: e.target.value })}
                             placeholder="YYYY-MM-DD"
@@ -259,7 +286,11 @@ export default function GridPage() {
                           </Link>
                         </td>
                         <td className="px-3 py-2.5 text-gray-900">{p.lastname || "—"}</td>
-                        <td className="px-3 py-2.5 text-gray-700">{p.birthdate || "—"}</td>
+                        <td className="px-3 py-2.5 text-gray-700">{p.alias || "—"}</td>
+                        <td className="px-3 py-2.5 text-center text-gray-700">
+                          {p.gender === "male" ? "♂" : p.gender === "female" ? "♀" : "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-700">{formatDate(p.birthdate) || "—"}</td>
                         <td className="px-3 py-2.5 text-gray-700">{p.birthplace || "—"}</td>
                         <td className="px-3 py-2.5 text-center">
                           {p.isAlive ? (
@@ -268,13 +299,27 @@ export default function GridPage() {
                             <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600">{t("field.deceased")}</span>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 text-gray-700">{p.deathdate || "—"}</td>
+                        <td className="px-3 py-2.5 text-gray-700">{formatDate(p.deathdate) || "—"}</td>
                         <td className="px-3 py-2.5 text-right">
                           <button
                             onClick={() => startEdit(p)}
-                            className="text-xs px-2 py-1 border rounded text-blue-600 hover:bg-blue-50"
+                            className="text-xs px-2 py-1 border rounded text-blue-600 hover:bg-blue-50 mr-1"
                           >
                             {t("admin.edit")}
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(t("confirm.deletePerson"))) return;
+                              try {
+                                await deletePerson(p.id);
+                                await fetchAll();
+                              } catch (err) {
+                                console.error("Delete failed:", err);
+                              }
+                            }}
+                            className="text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50"
+                          >
+                            {t("admin.remove")}
                           </button>
                         </td>
                       </>
@@ -283,7 +328,7 @@ export default function GridPage() {
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
+                    <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
                       {filter ? t("tag.noMatches") : t("admin.noUsers")}
                     </td>
                   </tr>

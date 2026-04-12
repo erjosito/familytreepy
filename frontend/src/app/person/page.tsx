@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { getPerson, listPersons, getStorageConfig, getNotes, addNote, deleteNote, uploadPicture, uploadProfilePic, tagPicture, removePicture, getPeopleInPicture, untagPicture, deactivateRelationship, reactivateRelationship, deleteRelationship, updatePerson, type Note } from "@/lib/api";
+import { getPerson, listPersons, getStorageConfig, getNotes, addNote, deleteNote, uploadPicture, uploadProfilePic, tagPicture, removePicture, getPeopleInPicture, untagPicture, deactivateRelationship, reactivateRelationship, deleteRelationship, updatePerson, createPerson, createRelationship, deletePerson, type Note } from "@/lib/api";
 import type { PersonNode, GraphEdge } from "@/lib/types";
 import { useAdminView } from "@/lib/adminView";
 import { useI18n } from "@/lib/i18n";
+import { formatDate, formatTimestamp } from "@/lib/dateUtils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TFunc = (key: any) => string;
@@ -112,15 +113,6 @@ function PersonPageContent() {
     } catch (err) {
       console.error("Failed to delete note:", err);
     }
-  };
-
-  const formatDate = (ts: string) => {
-    try {
-      return new Date(ts).toLocaleDateString(undefined, {
-        year: "numeric", month: "short", day: "numeric",
-        hour: "2-digit", minute: "2-digit",
-      });
-    } catch { return ts; }
   };
 
   if (!personId) {
@@ -299,7 +291,7 @@ function PersonPageContent() {
                   <p className="text-gray-900 whitespace-pre-wrap">{note.text}</p>
                   <div className="flex items-center gap-2 mt-2">
                     <span className="text-xs text-gray-500">— {note.author}</span>
-                    <span className="text-xs text-gray-400">{formatDate(note.timestamp)}</span>
+                    <span className="text-xs text-gray-400">{formatTimestamp(note.timestamp)}</span>
                   </div>
                   {adminView && (
                     <button
@@ -372,12 +364,14 @@ function ProfileHeader({
   onUpdated: () => void;
   t: TFunc;
 }) {
+  const { adminView } = useAdminView();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     firstname: "",
     lastname: "",
+    alias: "",
     birthdate: "",
     birthplace: "",
     isAlive: true,
@@ -388,6 +382,7 @@ function ProfileHeader({
     setDraft({
       firstname: person.firstname || "",
       lastname: person.lastname || "",
+      alias: person.alias || "",
       birthdate: person.birthdate || "",
       birthplace: person.birthplace || "",
       isAlive: !!person.isAlive,
@@ -488,13 +483,23 @@ function ProfileHeader({
                   />
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t("field.alias")}</label>
+                <input
+                  type="text"
+                  value={draft.alias}
+                  onChange={(e) => setDraft({ ...draft, alias: e.target.value })}
+                  className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">{t("field.birthdate")}</label>
                   <input
-                    type="date"
+                    type="text"
                     value={draft.birthdate}
                     onChange={(e) => setDraft({ ...draft, birthdate: e.target.value })}
+                    placeholder="dd/mm/yyyy"
                     className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
                   />
                 </div>
@@ -522,9 +527,10 @@ function ProfileHeader({
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">{t("field.deathDate")}</label>
                     <input
-                      type="date"
+                      type="text"
                       value={draft.deathdate}
                       onChange={(e) => setDraft({ ...draft, deathdate: e.target.value })}
+                      placeholder="dd/mm/yyyy"
                       className="border rounded px-3 py-1.5 text-sm text-gray-900"
                     />
                   </div>
@@ -548,26 +554,87 @@ function ProfileHeader({
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-3 mb-3">
-                <h1 className="text-2xl font-bold text-gray-900">{person.fullname || "Unknown"}</h1>
+              <div className="flex items-center gap-2 mb-1">
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {person.fullname || "Unknown"}
+                  {person.alias && <span className="text-lg font-normal text-gray-500 ml-2">({person.alias})</span>}
+                </h1>
                 <button
                   onClick={startEdit}
                   className="text-xs px-2 py-1 rounded border border-blue-300 text-blue-600 hover:bg-blue-50"
                 >
                   {t("detail.edit")}
                 </button>
+              </div>
+              {/* Action buttons */}
+              <div className="flex flex-wrap gap-1 mb-3">
                 <Link
                   href={`/story/?id=${person.id}&degree=3`}
-                  className="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-50"
+                  className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
                 >
                   📖 {t("story.viewStory")}
                 </Link>
+                <Link
+                  href={`/?root=${person.id}`}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                >
+                  🎯 {t("menu.centerOn")}
+                </Link>
+                <button
+                  onClick={() => { window.location.href = `/?action=add_child&nodeId=${person.id}`; }}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                >
+                  ➕ {t("menu.addChild")}
+                </button>
+                <button
+                  onClick={() => { window.location.href = `/?action=add_spouse&nodeId=${person.id}`; }}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                >
+                  💑 {t("menu.addSpouse")}
+                </button>
+                <button
+                  onClick={() => { window.location.href = `/?action=add_parent&nodeId=${person.id}`; }}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                >
+                  👆 {t("menu.addParent")}
+                </button>
+                <button
+                  onClick={() => { window.location.href = `/?action=link_child&nodeId=${person.id}`; }}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                >
+                  🔗 {t("menu.linkChild")}
+                </button>
+                <button
+                  onClick={() => { window.location.href = `/?action=link_spouse&nodeId=${person.id}`; }}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                >
+                  🔗 {t("menu.linkSpouse")}
+                </button>
+                <button
+                  onClick={() => { window.location.href = `/?action=link_parent&nodeId=${person.id}`; }}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                >
+                  🔗 {t("menu.linkParent")}
+                </button>
+                {adminView && (
+                  <button
+                    onClick={async () => {
+                      if (confirm(t("confirm.deletePerson"))) {
+                        await deletePerson(person.id);
+                        window.location.href = "/";
+                      }
+                    }}
+                    className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50"
+                  >
+                    🗑 {t("menu.deletePerson")}
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
                 {person.birthdate && (
                   <>
                     <span className="text-gray-500">{t("person.born")}</span>
-                    <span className="text-gray-900">{person.birthdate}</span>
+                    <span className="text-gray-900">{formatDate(person.birthdate)}</span>
                   </>
                 )}
                 {person.birthplace && (

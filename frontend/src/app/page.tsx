@@ -43,6 +43,7 @@ export default function ExplorePage() {
   const [formMode, setFormMode] = useState<{ type: "add_child" | "add_spouse" | "add_parent" | "edit"; nodeId: string; spouses?: { id: string; name: string }[] } | null>(null);
   const [otherParentId, setOtherParentId] = useState<string>("");
   const [linkMode, setLinkMode] = useState<{ type: "link_child" | "link_spouse" | "link_parent"; nodeId: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("breadthfirst");
   const [sasToken, setSasToken] = useState("");
   const [devMode, setDevMode] = useState(false);
@@ -88,7 +89,10 @@ export default function ExplorePage() {
     const nodeId = contextMenu?.nodeId;
     setContextMenu(null);
     if (!nodeId) return;
+    await handleAction(action, nodeId);
+  };
 
+  const handleAction = async (action: string, nodeId: string) => {
     if (action === "center") {
       setRootId(nodeId);
     } else if (action === "story") {
@@ -104,7 +108,6 @@ export default function ExplorePage() {
       setLinkMode(null);
       setOtherParentId("");
       if (action === "add_child") {
-        // Find spouses to offer as other parent
         const detail = await getPerson(nodeId);
         const rels = (detail.relationships || []) as GraphEdge[];
         const seenSpouses = new Set<string>();
@@ -134,7 +137,8 @@ export default function ExplorePage() {
   };
 
   const handleFormSubmit = async (data: Record<string, unknown>) => {
-    if (!formMode) return;
+    if (!formMode || submitting) return;
+    setSubmitting(true);
     try {
       if (formMode.type === "edit") {
         await updatePerson(formMode.nodeId, data);
@@ -229,6 +233,7 @@ export default function ExplorePage() {
             layout={layoutMode}
             sasToken={sasToken}
             onNodeClick={handleNodeClick}
+            onNodeDblClick={(nodeId) => setRootId(nodeId)}
             onContextMenu={handleContextMenu}
             relationshipColors={EDGE_COLORS}
           />
@@ -331,6 +336,7 @@ export default function ExplorePage() {
                   setSelectedSiblings(Array.isArray(detail.siblings) ? detail.siblings as string[] : []);
                 }
               }}
+              onAction={handleAction}
             />
           )}
         </div>

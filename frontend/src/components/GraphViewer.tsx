@@ -19,6 +19,7 @@ interface Props {
   layout?: LayoutMode;
   sasToken?: string;
   onNodeClick?: (nodeId: string) => void;
+  onNodeDblClick?: (nodeId: string) => void;
   onContextMenu?: (nodeId: string, x: number, y: number) => void;
   relationshipColors?: Record<string, string>;
 }
@@ -285,7 +286,7 @@ function getLayoutConfig(mode: LayoutMode, elements: { data: Record<string, unkn
   }
 }
 
-export default function GraphViewer({ data, layout = "breadthfirst", sasToken = "", onNodeClick, onContextMenu, relationshipColors = {} }: Props) {
+export default function GraphViewer({ data, layout = "breadthfirst", sasToken = "", onNodeClick, onNodeDblClick, onContextMenu, relationshipColors = {} }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
 
@@ -296,6 +297,15 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
       }
     },
     [onNodeClick]
+  );
+
+  const handleDblTap = useCallback(
+    (e: EventObject) => {
+      if (cyRef.current && e.target !== cyRef.current && e.target.isNode()) {
+        onNodeDblClick?.(e.target.id());
+      }
+    },
+    [onNodeDblClick]
   );
 
   useEffect(() => {
@@ -427,12 +437,13 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
     });
 
     cyRef.current.on("tap", "node", handleTap);
+    cyRef.current.on("dbltap", "node", handleDblTap);
 
     return () => {
       try { cyRef.current?.destroy(); } catch { /* ignore */ }
       cyRef.current = null;
     };
-  }, [data, layout, sasToken, relationshipColors, handleTap]);
+  }, [data, layout, sasToken, relationshipColors, handleTap, handleDblTap]);
 
   // Suppress browser context menu and handle right-click on nodes.
   useEffect(() => {

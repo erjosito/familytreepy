@@ -18,6 +18,7 @@ interface Props {
   currentUserEmail?: string;
   onClose?: () => void;
   onPersonUpdated?: () => void;
+  onAction?: (action: string, nodeId: string) => void;
 }
 
 export default function DetailPanel({
@@ -30,6 +31,7 @@ export default function DetailPanel({
   currentUserEmail = "",
   onClose,
   onPersonUpdated,
+  onAction,
 }: Props) {
   const { t } = useI18n();
   const { adminView } = useAdminView();
@@ -66,6 +68,7 @@ export default function DetailPanel({
     setDraft({
       firstname: person.firstname || "",
       lastname: person.lastname || "",
+      alias: person.alias || "",
       birthdate: person.birthdate || "",
       birthplace: person.birthplace || "",
       isAlive: !!person.isAlive,
@@ -135,6 +138,11 @@ export default function DetailPanel({
           )}
         </div>
       </div>
+
+      {/* Quick actions */}
+      {onAction && !editing && (
+        <PersonActionBar personId={person.id} onAction={onAction} t={t} adminView={adminView} />
+      )}
 
       {/* Profile picture */}
       <div className="flex items-center gap-3">
@@ -246,8 +254,8 @@ export default function DetailPanel({
                     />
                     <span className="font-medium text-gray-700">{label}:</span>
                     <span className="text-gray-900">{otherName}</span>
-                    {rel.start_date && <span className="text-xs text-gray-500">{rel.start_date}</span>}
-                    {rel.end_date && <span className="text-xs text-gray-500">– {rel.end_date}</span>}
+                    {rel.start_date && <span className="text-xs text-gray-500">{formatDate(rel.start_date)}</span>}
+                    {rel.end_date && <span className="text-xs text-gray-500">– {formatDate(rel.end_date)}</span>}
                     {canToggle && (
                       <RelationshipToggle
                         source={rel.source}
@@ -321,6 +329,11 @@ function ViewFields({ person }: { person: PersonNode }) {
           <span className="font-medium text-gray-600">{t("field.lastName")}:</span> {person.lastname}
         </div>
       )}
+      {person.alias && (
+        <div>
+          <span className="font-medium text-gray-600">{t("field.alias")}:</span> {person.alias}
+        </div>
+      )}
       {person.birthdate && (
         <div>
           <span className="font-medium text-gray-600">{t("field.born")}</span> {formatDate(person.birthdate)}
@@ -333,7 +346,7 @@ function ViewFields({ person }: { person: PersonNode }) {
       )}
       <div>
         <span className="font-medium text-gray-600">{t("field.status")}</span>{" "}
-        {!!person.isAlive ? t("field.living") : `${t("field.deceased")}${person.deathdate ? ` (${person.deathdate})` : ""}`}
+        {!!person.isAlive ? t("field.living") : `${t("field.deceased")}${person.deathdate ? ` (${formatDate(person.deathdate)})` : ""}`}
       </div>
     </div>
   );
@@ -358,7 +371,8 @@ function EditFields({
     <div className="space-y-3 text-sm text-gray-900">
       <Field label={t("field.firstName")} value={draft.firstname as string} onChange={(v) => set("firstname", v)} onClear={() => onClear("firstname")} clearLabel={t("detail.clear")} />
       <Field label={t("field.lastName")} value={draft.lastname as string} onChange={(v) => set("lastname", v)} onClear={() => onClear("lastname")} clearLabel={t("detail.clear")} />
-      <Field label={t("field.birthdate")} value={draft.birthdate as string} onChange={(v) => set("birthdate", v)} onClear={() => onClear("birthdate")} placeholder={t("field.placeholderDate")} clearLabel={t("detail.clear")} />
+      <Field label={t("field.alias")} value={draft.alias as string} onChange={(v) => set("alias", v)} onClear={() => onClear("alias")} clearLabel={t("detail.clear")} />
+      <Field label={t("field.birthdate")}value={draft.birthdate as string} onChange={(v) => set("birthdate", v)} onClear={() => onClear("birthdate")} placeholder={t("field.placeholderDate")} clearLabel={t("detail.clear")} />
       <Field label={t("field.birthplace")} value={draft.birthplace as string} onChange={(v) => set("birthplace", v)} onClear={() => onClear("birthplace")} clearLabel={t("detail.clear")} />
 
       <div className="flex items-center gap-2">
@@ -799,20 +813,6 @@ function NotesSection({
     }
   };
 
-  const formatDate = (ts: string) => {
-    try {
-      return new Date(ts).toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return ts;
-    }
-  };
-
   return (
     <div>
       <h3 className="font-semibold text-sm text-gray-600 uppercase tracking-wide mb-2">
@@ -831,7 +831,7 @@ function NotesSection({
                   <p className="text-gray-900 whitespace-pre-wrap">{note.text}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-gray-500">— {note.author}</span>
-                    <span className="text-xs text-gray-400">{formatDate(note.timestamp)}</span>
+                    <span className="text-xs text-gray-400">{formatTimestamp(note.timestamp)}</span>
                   </div>
                   {adminView && (
                     <button
@@ -1031,6 +1031,59 @@ function PersonTagSearch({
       )}
       {query.trim() && filtered.length === 0 && (
         <p className="text-xs text-gray-400 py-1">{t("tag.noMatches")}</p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Person action bar (add/link/delete/story)                           */
+/* ------------------------------------------------------------------ */
+function PersonActionBar({
+  personId,
+  onAction,
+  t,
+  adminView,
+}: {
+  personId: string;
+  onAction: (action: string, nodeId: string) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: (key: any) => string;
+  adminView: boolean;
+}) {
+  const actions = [
+    { label: t("menu.centerOn"), action: "center", icon: "🎯" },
+    { label: t("menu.addChild"), action: "add_child", icon: "➕" },
+    { label: t("menu.addSpouse"), action: "add_spouse", icon: "💑" },
+    { label: t("menu.addParent"), action: "add_parent", icon: "👆" },
+    { label: t("menu.linkChild"), action: "link_child", icon: "🔗" },
+    { label: t("menu.linkSpouse"), action: "link_spouse", icon: "🔗" },
+    { label: t("menu.linkParent"), action: "link_parent", icon: "🔗" },
+    { label: t("story.viewStory"), action: "story", icon: "📖" },
+  ];
+
+  const deleteAction = { label: t("menu.deletePerson"), action: "delete", icon: "🗑" };
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {actions.map((a) => (
+        <button
+          key={a.action}
+          onClick={() => onAction(a.action, personId)}
+          className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+          title={a.label}
+        >
+          {a.icon}
+        </button>
+      ))}
+      {adminView && (
+        <button
+          onClick={() => onAction(deleteAction.action, personId)}
+          className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors"
+          title={deleteAction.label}
+        >
+          {deleteAction.icon}
+        </button>
       )}
     </div>
   );

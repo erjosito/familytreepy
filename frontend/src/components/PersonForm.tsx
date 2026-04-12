@@ -60,9 +60,10 @@ export default function PersonForm({ mode, initialData = {}, title, onSubmit, on
               />
             ) : config.type === "date" ? (
               <input
-                type="date"
+                type="text"
                 value={(formData[field] as string) || ""}
                 onChange={(e) => handleChange(field, e.target.value)}
+                placeholder="dd/mm/yyyy"
                 className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
               />
             ) : (
