@@ -99,7 +99,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-3xl mx-auto p-6 space-y-6">
+      <div className="max-w-3xl mx-auto p-3 sm:p-6 space-y-6">
         <h1 className="text-2xl font-bold text-gray-900">{t("admin.title")}</h1>
 
         {error && (
@@ -109,7 +109,7 @@ export default function AdminPage() {
         )}
 
         {/* Users table */}
-        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+        <div className="bg-white rounded-lg border shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>

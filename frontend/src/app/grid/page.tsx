@@ -157,8 +157,8 @@ export default function GridPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-gray-900">
             {t("grid.title")} <span className="text-gray-400 font-normal text-lg">({sorted.length})</span>
           </h1>
@@ -167,7 +167,7 @@ export default function GridPage() {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder={t("grid.search")}
-            className="border rounded-lg px-3 py-1.5 text-sm text-gray-900 w-64"
+            className="w-full border rounded-lg px-3 py-2 text-sm text-gray-900 sm:w-64 sm:py-1.5"
           />
         </div>
 

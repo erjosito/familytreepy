@@ -21,7 +21,7 @@ COPY ./treelogo01.svg ./
 RUN mkdir -p .streamlit
 RUN mkdir -p pages
 RUN mkdir -p imagegen
-COPY ./.streamlit/secretsazure.toml .streamlit/secrets.toml
+# NOTE: secrets.toml must be mounted at runtime, not baked into the image
 COPY ./pages/*.py pages/
 COPY ./imagegen/*.* imagegen/
 

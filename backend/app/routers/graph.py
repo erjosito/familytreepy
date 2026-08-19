@@ -78,7 +78,6 @@ def get_storage_config():
 @public_router.get("/proxy/image")
 def proxy_image(url: str):
     """Proxy an Azure Blob image to avoid browser CORS issues."""
-    # Validate the URL: HTTPS only, Azure Blob Storage domains only
     parsed = urlparse(url)
     if parsed.scheme != "https":
         raise HTTPException(status_code=400, detail="Only HTTPS URLs are allowed")
@@ -87,6 +86,10 @@ def proxy_image(url: str):
         raise HTTPException(status_code=400, detail="Private/reserved addresses are not allowed")
     if not hostname.endswith(".blob.core.windows.net"):
         raise HTTPException(status_code=400, detail="Only Azure Blob Storage URLs are allowed")
+    # Restrict to our own storage account only
+    own_account = os.getenv("AZURE_STORAGE_ACCOUNT", "")
+    if own_account and not hostname.startswith(f"{own_account}."):
+        raise HTTPException(status_code=400, detail="Only images from the configured storage account are allowed")
 
     import requests as req
     sas = _get_sas_token()

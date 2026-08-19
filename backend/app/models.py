@@ -11,6 +11,8 @@ class PersonCreate(BaseModel):
     birthplace: str | None = None
     isAlive: bool | None = True
     deathdate: str | None = None
+    gender: str | None = None
+    alias: str | None = None
     profilepic: str | None = None
     pictures: list[str] | None = None
     extra: dict[str, Any] | None = None
@@ -23,6 +25,8 @@ class PersonUpdate(BaseModel):
     birthplace: str | None = None
     isAlive: bool | None = None
     deathdate: str | None = None
+    gender: str | None = None
+    alias: str | None = None
     profilepic: str | None = None
     pictures: list[str] | None = None
     extra: dict[str, Any] | None = None

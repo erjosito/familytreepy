@@ -17,6 +17,7 @@ import time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
+from itsdangerous import BadSignature
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -60,8 +61,20 @@ _GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 _GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
-# In-memory nonce store (state param → expiry)
-_pending_states: dict[str, float] = {}
+# State management: use signed tokens instead of in-memory store
+# This ensures state survives across workers, restarts, and scale events
+def _create_state(provider: str) -> str:
+    """Create a signed state token containing the provider and timestamp."""
+    return _session_serializer.dumps({"provider": provider, "ts": time.time()})
+
+
+def _verify_state(state: str) -> dict | None:
+    """Verify and decode a state token. Returns payload or None."""
+    try:
+        data = _session_serializer.loads(state, max_age=600)  # 10 min expiry
+        return data
+    except BadSignature:
+        return None
 
 
 def _set_session_cookie(response: Response, user: dict) -> None:
@@ -97,15 +110,8 @@ async def login(request: Request, provider: str = "microsoft"):
     if not _OAUTH_ENABLED:
         raise HTTPException(400, "OAuth not configured")
 
-    state = secrets.token_urlsafe(32)
-    # Clean expired states
-    now = time.time()
-    for k in [k for k, v in _pending_states.items() if isinstance(v, dict) and v.get("expiry", 0) < now]:
-        _pending_states.pop(k, None)
-
     if provider == "google" and _GOOGLE_CLIENT_ID:
-        # Direct Google OAuth
-        _pending_states[state] = {"expiry": time.time() + 600, "provider": "google"}
+        state = _create_state("google")
         params = {
             "client_id": _GOOGLE_CLIENT_ID,
             "response_type": "code",
@@ -118,8 +124,7 @@ async def login(request: Request, provider: str = "microsoft"):
         from urllib.parse import urlencode
         return RedirectResponse(f"{_GOOGLE_AUTHORIZE_URL}?{urlencode(params)}")
     else:
-        # Microsoft direct login
-        _pending_states[state] = {"expiry": time.time() + 600, "provider": "microsoft"}
+        state = _create_state("microsoft")
         authorize_url = f"{_MSA_AUTHORITY}/oauth2/v2.0/authorize"
         params = {
             "client_id": _CLIENT_ID,
@@ -141,18 +146,11 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
     if error:
         return RedirectResponse(f"{_FRONTEND_URL}?auth_error={error}")
 
-    # Validate state and retrieve provider
-    state_data = _pending_states.pop(state, None)
+    # Validate signed state token
+    state_data = _verify_state(state)
     if state_data is None:
         return RedirectResponse(f"{_FRONTEND_URL}?auth_error=invalid_state")
-    if isinstance(state_data, dict):
-        if time.time() > state_data["expiry"]:
-            return RedirectResponse(f"{_FRONTEND_URL}?auth_error=invalid_state")
-        provider = state_data.get("provider", "microsoft")
-    else:
-        if time.time() > state_data:
-            return RedirectResponse(f"{_FRONTEND_URL}?auth_error=invalid_state")
-        provider = "microsoft"
+    provider = state_data.get("provider", "microsoft")
 
     # Exchange authorization code for tokens
     if provider == "google":

@@ -47,6 +47,13 @@ export default function ExplorePage() {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("breadthfirst");
   const [sasToken, setSasToken] = useState("");
   const [devMode, setDevMode] = useState(false);
+  const showMobilePanel = Boolean(formMode || linkMode || selectedPerson);
+
+  const closeSidePanel = () => {
+    setFormMode(null);
+    setLinkMode(null);
+    setSelectedPerson(null);
+  };
 
   const fetchGraph = useCallback(async () => {
     setLoading(true);
@@ -166,46 +173,50 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex h-[calc(100dvh-3.5rem)] flex-col md:h-[calc(100dvh-3rem)]">
       {/* Toolbar */}
-      <header className="flex items-center gap-4 px-4 py-3 bg-white border-b shadow-sm flex-wrap">
-        <label className="text-sm text-gray-700">{t("toolbar.center")}</label>
-        <select
-          className="border rounded px-2 py-1 text-sm text-gray-900 max-w-[250px]"
-          value={rootId}
-          onChange={(e) => setRootId(e.target.value)}
-        >
-          <option value="">{t("toolbar.all")}</option>
-          {[...personList].sort((a, b) => a.fullname.localeCompare(b.fullname)).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.fullname}
-            </option>
-          ))}
-        </select>
+      <header className="flex flex-col gap-2 bg-white px-3 py-2 shadow-sm border-b md:flex-row md:items-center md:gap-4 md:px-4 md:py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <label className="shrink-0 text-sm text-gray-700">{t("toolbar.center")}</label>
+          <select
+            className="min-w-0 flex-1 border rounded px-2 py-2 text-sm text-gray-900 md:max-w-[250px] md:py-1"
+            value={rootId}
+            onChange={(e) => setRootId(e.target.value)}
+          >
+            <option value="">{t("toolbar.all")}</option>
+            {[...personList].sort((a, b) => a.fullname.localeCompare(b.fullname)).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.fullname}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <label className="text-sm text-gray-700">{t("toolbar.radius")}</label>
-        <input
-          type="range"
-          min={1}
-          max={10}
-          value={degree}
-          onChange={(e) => setDegree(Number(e.target.value))}
-          className="w-24"
-        />
-        <span className="text-sm font-mono w-4">{degree}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <label className="shrink-0 text-sm text-gray-700">{t("toolbar.radius")}</label>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            value={degree}
+            onChange={(e) => setDegree(Number(e.target.value))}
+            className="min-w-16 flex-1 md:w-24 md:flex-none"
+          />
+          <span className="w-4 shrink-0 text-sm font-mono">{degree}</span>
 
-        <label className="text-sm text-gray-700">{t("toolbar.layout")}</label>
-        <select
-          className="border rounded px-2 py-1 text-sm text-gray-900"
-          value={layoutMode}
-          onChange={(e) => setLayoutMode(e.target.value as LayoutMode)}
-        >
-          {LAYOUT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {t(opt.labelKey as Parameters<typeof t>[0])}
-            </option>
-          ))}
-        </select>
+          <label className="ml-1 shrink-0 text-sm text-gray-700">{t("toolbar.layout")}</label>
+          <select
+            className="min-w-0 flex-1 border rounded px-2 py-2 text-sm text-gray-900 md:flex-none md:py-1"
+            value={layoutMode}
+            onChange={(e) => setLayoutMode(e.target.value as LayoutMode)}
+          >
+            {LAYOUT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {t(opt.labelKey as Parameters<typeof t>[0])}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {adminView && (
           <div className="ml-auto flex items-center gap-2">
@@ -220,9 +231,9 @@ export default function ExplorePage() {
       </header>
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Graph panel */}
-        <div className="flex-[65] relative">
+        <div className="relative min-w-0 flex-1 md:flex-[65]">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
               <span className="text-gray-400">{t("toolbar.loading")}</span>
@@ -260,7 +271,15 @@ export default function ExplorePage() {
         </div>
 
         {/* Detail panel */}
-        <div className="flex-[35] border-l bg-white overflow-y-auto">
+        {showMobilePanel && (
+          <button
+            type="button"
+            className="fixed inset-0 z-20 bg-black/30 md:hidden"
+            aria-label={t("form.cancel")}
+            onClick={closeSidePanel}
+          />
+        )}
+        <div className={`${showMobilePanel ? "fixed inset-x-0 bottom-0 z-30 max-h-[72dvh] rounded-t-2xl border-t shadow-2xl" : "hidden"} w-full overflow-y-auto bg-white md:static md:block md:max-h-none md:flex-[35] md:rounded-none md:border-l md:border-t-0 md:shadow-none`}>
           {formMode ? (
             <div className="p-4">
               <PersonForm

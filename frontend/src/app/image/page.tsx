@@ -71,9 +71,9 @@ export default function ImagePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="max-w-4xl mx-auto p-3 sm:p-6 space-y-6">
         {/* Controls */}
-        <div className="bg-white rounded-lg border p-6 space-y-4">
+        <div className="bg-white rounded-lg border p-4 sm:p-6 space-y-4">
           <h2 className="text-lg font-semibold text-gray-900">{t("image.title")}</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -119,7 +119,7 @@ export default function ImagePage() {
           {/* Color scheme */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{t("image.colorScheme")}</label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {COLOR_SCHEMES.map((cs) => (
                 <button
                   key={cs.value}
@@ -212,7 +212,7 @@ export default function ImagePage() {
 
         {/* Preview */}
         {imageUrl && (
-          <div className="bg-white rounded-lg border p-6 space-y-4">
+          <div className="bg-white rounded-lg border p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">{t("image.preview")}</h3>
               <button

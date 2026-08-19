@@ -486,7 +486,7 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
   return (
     <div
       ref={containerRef}
-      className="w-full h-full min-h-[500px] bg-gray-50 rounded-lg border"
+      className="h-full min-h-0 w-full touch-none bg-gray-50 md:rounded-lg md:border"
     />
   );
 }
