@@ -34,6 +34,13 @@ const translations = {
     "toolbar.radius": "Radius:",
     "toolbar.layout": "Layout:",
     "toolbar.loading": "Loading...",
+    "search.label": "Find a person",
+    "search.placeholder": "Search name or alias...",
+    "search.results": "Search results",
+    "search.recent": "Recently viewed",
+    "search.noResults": "No matching people",
+    "search.noRecent": "Start typing to find someone",
+    "search.unknown": "Unknown person",
 
     // Layout modes
     "layout.hierarchical": "Hierarchical",
@@ -332,6 +339,13 @@ const translations = {
     "toolbar.radius": "Radio:",
     "toolbar.layout": "Disposición:",
     "toolbar.loading": "Cargando...",
+    "search.label": "Buscar una persona",
+    "search.placeholder": "Buscar nombre o alias...",
+    "search.results": "Resultados de búsqueda",
+    "search.recent": "Vistos recientemente",
+    "search.noResults": "No hay personas que coincidan",
+    "search.noRecent": "Escribe para buscar a alguien",
+    "search.unknown": "Persona desconocida",
 
     // Layout modes
     "layout.hierarchical": "Jerárquico",

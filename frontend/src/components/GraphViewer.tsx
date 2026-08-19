@@ -22,6 +22,8 @@ interface Props {
   onNodeDblClick?: (nodeId: string) => void;
   onContextMenu?: (nodeId: string, x: number, y: number) => void;
   relationshipColors?: Record<string, string>;
+  focusNodeId?: string;
+  focusRequest?: number;
 }
 
 /**
@@ -286,7 +288,7 @@ function getLayoutConfig(mode: LayoutMode, elements: { data: Record<string, unkn
   }
 }
 
-export default function GraphViewer({ data, layout = "breadthfirst", sasToken = "", onNodeClick, onNodeDblClick, onContextMenu, relationshipColors = {} }: Props) {
+export default function GraphViewer({ data, layout = "breadthfirst", sasToken = "", onNodeClick, onNodeDblClick, onContextMenu, relationshipColors = {}, focusNodeId, focusRequest }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
 
@@ -444,6 +446,18 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
       cyRef.current = null;
     };
   }, [data, layout, sasToken, relationshipColors, handleTap, handleDblTap]);
+
+  useEffect(() => {
+    if (!focusNodeId || !cyRef.current) return;
+    const node = cyRef.current.getElementById(focusNodeId);
+    if (node.empty()) return;
+    cyRef.current.elements().unselect();
+    node.select();
+    cyRef.current.animate(
+      { center: { eles: node }, zoom: Math.max(cyRef.current.zoom(), 1.4) },
+      { duration: 300 }
+    );
+  }, [focusNodeId, focusRequest, data, layout]);
 
   // Suppress browser context menu and handle right-click on nodes.
   useEffect(() => {

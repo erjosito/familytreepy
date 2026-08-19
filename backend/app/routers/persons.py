@@ -32,12 +32,12 @@ async def _validate_image_upload(file: UploadFile) -> bytes:
 
 @router.get("", response_model=list[dict])
 def list_persons(tree=Depends(get_tree)):
-    """List all persons (summary: id + fullname)."""
+    """List all persons with fields needed by selectors and search."""
     result = []
     for node_id in tree.graph.nodes():
         data = tree.graph.nodes[node_id]
         fullname = (data.get("firstname", "") + " " + data.get("lastname", "")).strip()
-        result.append({"id": node_id, "fullname": fullname})
+        result.append({"id": node_id, "fullname": fullname, "alias": data.get("alias", "")})
     return result
 
 

@@ -45,7 +45,7 @@ def test_health(client, monkeypatch):
     assert resp.status_code == 200
     assert resp.json() == {
         "status": "ok",
-        "version": "0.1.1",
+        "version": "0.2.0",
         "revision": "test-revision",
         "built_at": "2026-08-19T12:00:00Z",
     }
@@ -63,12 +63,12 @@ def test_create_person(client):
 
 
 def test_list_persons(client):
-    client.post("/api/persons", json={"firstname": "One", "lastname": "Person"})
+    client.post("/api/persons", json={"firstname": "One", "lastname": "Person", "alias": "First"})
     resp = client.get("/api/persons")
     assert resp.status_code == 200
     persons = resp.json()
     assert len(persons) >= 1
-    assert any(p["fullname"] == "One Person" for p in persons)
+    assert any(p["fullname"] == "One Person" and p["alias"] == "First" for p in persons)
 
 
 def test_get_person(client):

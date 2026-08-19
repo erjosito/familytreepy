@@ -5,6 +5,7 @@ import GraphViewer, { LAYOUT_OPTIONS, type LayoutMode } from "@/components/Graph
 import DetailPanel from "@/components/DetailPanel";
 import ContextMenu from "@/components/ContextMenu";
 import PersonForm from "@/components/PersonForm";
+import PersonSearch, { type SearchablePerson } from "@/components/PersonSearch";
 import { getGraph, listPersons, getPerson, createPerson, updatePerson, deletePerson, createRelationship, deactivateRelationship, getStorageConfig } from "@/lib/api";
 import type { GraphData, PersonNode, GraphEdge } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
@@ -34,7 +35,7 @@ export default function ExplorePage() {
   const toast = useToast();
   const { adminView } = useAdminView();
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
-  const [personList, setPersonList] = useState<{ id: string; fullname: string }[]>([]);
+  const [personList, setPersonList] = useState<SearchablePerson[]>([]);
   const [rootId, setRootId] = useState<string>("");
   const [degree, setDegree] = useState(2);
   const [selectedPerson, setSelectedPerson] = useState<PersonNode | null>(null);
@@ -49,6 +50,7 @@ export default function ExplorePage() {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("breadthfirst");
   const [sasToken, setSasToken] = useState("");
   const [devMode, setDevMode] = useState(false);
+  const [nodeFocus, setNodeFocus] = useState({ id: "", request: 0 });
   const showMobilePanel = Boolean(formMode || linkMode || selectedPerson);
 
   const closeSidePanel = () => {
@@ -196,6 +198,14 @@ export default function ExplorePage() {
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col md:h-[calc(100dvh-3rem)]">
       {/* Toolbar */}
       <header className="flex flex-col gap-2 bg-white px-3 py-2 shadow-sm border-b md:flex-row md:items-center md:gap-4 md:px-4 md:py-3">
+        <PersonSearch
+          persons={personList}
+          onSelect={(person) => {
+            setNodeFocus((current) => ({ id: person.id, request: current.request + 1 }));
+            setRootId(person.id);
+            void handleNodeClick(person.id);
+          }}
+        />
         <div className="flex min-w-0 items-center gap-2">
           <label className="shrink-0 text-sm text-gray-700">{t("toolbar.center")}</label>
           <select
@@ -267,6 +277,8 @@ export default function ExplorePage() {
             onNodeDblClick={(nodeId) => setRootId(nodeId)}
             onContextMenu={handleContextMenu}
             relationshipColors={EDGE_COLORS}
+            focusNodeId={nodeFocus.id}
+            focusRequest={nodeFocus.request}
           />
           {contextMenu && (
             <ContextMenu
