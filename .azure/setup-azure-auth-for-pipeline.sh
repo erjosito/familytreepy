@@ -11,7 +11,7 @@ GITHUB_REPOSITORY="erjosito/familytreepy"
 GITHUB_ENVIRONMENT="production"
 FEDERATED_CREDENTIAL_NAME="github-production"
 
-az account set --subscription "$SUBSCRIPTION_ID"
+az account show --subscription "$SUBSCRIPTION_ID" --output none
 
 location="$(az group show \
   --name "$APP_RESOURCE_GROUP" \

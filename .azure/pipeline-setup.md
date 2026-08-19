@@ -2,8 +2,9 @@
 
 The workflow in `.github/workflows/deploy-container-app.yml` deploys the
 production container to the existing `familytreeapp-app` Azure Container App.
-It does not use or change the Azure CLI subscription configured on a developer
-machine. Each workflow run authenticates directly to subscription
+The setup script and workflow pass the subscription explicitly and do not
+change the Azure CLI default configured on a developer machine. Each workflow
+run authenticates directly to subscription
 `3e78e84b-6750-44b9-9d57-d9bba935237a` through GitHub OpenID Connect (OIDC).
 
 ## One-time Azure setup
