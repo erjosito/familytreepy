@@ -21,6 +21,7 @@ interface Props {
   onNodeClick?: (nodeId: string) => void;
   onNodeDblClick?: (nodeId: string) => void;
   onContextMenu?: (nodeId: string, x: number, y: number) => void;
+  onNodeLongPress?: (nodeId: string) => void;
   relationshipColors?: Record<string, string>;
   focusNodeId?: string;
   focusRequest?: number;
@@ -288,13 +289,15 @@ function getLayoutConfig(mode: LayoutMode, elements: { data: Record<string, unkn
   }
 }
 
-export default function GraphViewer({ data, layout = "breadthfirst", sasToken = "", onNodeClick, onNodeDblClick, onContextMenu, relationshipColors = {}, focusNodeId, focusRequest }: Props) {
+export default function GraphViewer({ data, layout = "breadthfirst", sasToken = "", onNodeClick, onNodeDblClick, onContextMenu, onNodeLongPress, relationshipColors = {}, focusNodeId, focusRequest }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const suppressTapUntilRef = useRef(0);
 
   const handleTap = useCallback(
     (e: EventObject) => {
       if (cyRef.current && e.target !== cyRef.current && e.target.isNode()) {
+        if (Date.now() < suppressTapUntilRef.current) return;
         onNodeClick?.(e.target.id());
       }
     },
@@ -308,6 +311,21 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
       }
     },
     [onNodeDblClick]
+  );
+
+  const handleTapHold = useCallback(
+    (e: EventObject) => {
+      if (!cyRef.current || e.target === cyRef.current || !e.target.isNode()) return;
+      const originalEvent = e.originalEvent as MouseEvent & {
+        pointerType?: string;
+        touches?: TouchList;
+      };
+      const isTouch = originalEvent.pointerType === "touch" || "touches" in originalEvent;
+      if (!isTouch) return;
+      suppressTapUntilRef.current = Date.now() + 750;
+      onNodeLongPress?.(e.target.id());
+    },
+    [onNodeLongPress]
   );
 
   useEffect(() => {
@@ -440,12 +458,13 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
 
     cyRef.current.on("tap", "node", handleTap);
     cyRef.current.on("dbltap", "node", handleDblTap);
+    cyRef.current.on("taphold", "node", handleTapHold);
 
     return () => {
       try { cyRef.current?.destroy(); } catch { /* ignore */ }
       cyRef.current = null;
     };
-  }, [data, layout, sasToken, relationshipColors, handleTap, handleDblTap]);
+  }, [data, layout, sasToken, relationshipColors, handleTap, handleDblTap, handleTapHold]);
 
   useEffect(() => {
     if (!focusNodeId || !cyRef.current) return;
