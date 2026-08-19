@@ -92,9 +92,11 @@ export default function ImagePage() {
                 onChange={(e) => setRootId(e.target.value)}
               >
                 <option value="">{t("image.selectPerson")}</option>
-                {personList.map((p) => (
+                {[...personList]
+                  .sort((a, b) => a.fullname.localeCompare(b.fullname))
+                  .map((p) => (
                   <option key={p.id} value={p.id}>{p.fullname}</option>
-                ))}
+                  ))}
               </select>
             </div>
 
