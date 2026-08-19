@@ -41,6 +41,9 @@ const translations = {
     "search.noResults": "No matching people",
     "search.noRecent": "Start typing to find someone",
     "search.unknown": "Unknown person",
+    "actions.title": "Person actions",
+    "actions.open": "More actions",
+    "actions.close": "Close actions",
 
     // Layout modes
     "layout.hierarchical": "Hierarchical",
@@ -346,6 +349,9 @@ const translations = {
     "search.noResults": "No hay personas que coincidan",
     "search.noRecent": "Escribe para buscar a alguien",
     "search.unknown": "Persona desconocida",
+    "actions.title": "Acciones de la persona",
+    "actions.open": "Más acciones",
+    "actions.close": "Cerrar acciones",
 
     // Layout modes
     "layout.hierarchical": "Jerárquico",
@@ -617,7 +623,7 @@ const translations = {
   },
 } as const;
 
-type TranslationKey = keyof typeof translations.en;
+export type TranslationKey = keyof typeof translations.en;
 
 interface I18nContextValue {
   locale: Locale;

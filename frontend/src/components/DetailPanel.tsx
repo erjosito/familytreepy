@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
 import { formatDate, formatTimestamp } from "@/lib/dateUtils";
 import { useToast } from "@/components/ToastProvider";
+import type { PersonActionDefinition } from "@/lib/personActions";
 
 interface Props {
   person: PersonNode | null;
@@ -20,6 +21,8 @@ interface Props {
   onClose?: () => void;
   onPersonUpdated?: () => void;
   onAction?: (action: string, nodeId: string) => void;
+  actions?: PersonActionDefinition[];
+  onOpenActions?: (nodeId: string) => void;
 }
 
 export default function DetailPanel({
@@ -33,6 +36,8 @@ export default function DetailPanel({
   onClose,
   onPersonUpdated,
   onAction,
+  actions = [],
+  onOpenActions,
 }: Props) {
   const { t } = useI18n();
   const toast = useToast();
@@ -165,7 +170,19 @@ export default function DetailPanel({
 
       {/* Quick actions */}
       {onAction && !editing && (
-        <PersonActionBar personId={person.id} onAction={onAction} t={t} adminView={adminView} />
+        <>
+          {onOpenActions && (
+            <button
+              type="button"
+              onClick={() => onOpenActions(person.id)}
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 md:hidden"
+            >
+              <span aria-hidden="true">•••</span>
+              {t("actions.open")}
+            </button>
+          )}
+          <PersonActionBar personId={person.id} onAction={onAction} actions={actions} />
+        </>
       )}
 
       {/* Profile picture */}
@@ -1096,49 +1113,30 @@ function PersonTagSearch({
 function PersonActionBar({
   personId,
   onAction,
-  t,
-  adminView,
+  actions,
 }: {
   personId: string;
   onAction: (action: string, nodeId: string) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  t: (key: any) => string;
-  adminView: boolean;
+  actions: PersonActionDefinition[];
 }) {
-  const actions = [
-    { label: t("menu.centerOn"), action: "center", icon: "🎯" },
-    { label: t("menu.addChild"), action: "add_child", icon: "➕" },
-    { label: t("menu.addSpouse"), action: "add_spouse", icon: "💑" },
-    { label: t("menu.addParent"), action: "add_parent", icon: "👆" },
-    { label: t("menu.linkChild"), action: "link_child", icon: "🔗" },
-    { label: t("menu.linkSpouse"), action: "link_spouse", icon: "🔗" },
-    { label: t("menu.linkParent"), action: "link_parent", icon: "🔗" },
-    { label: t("story.viewStory"), action: "story", icon: "📖" },
-  ];
-
-  const deleteAction = { label: t("menu.deletePerson"), action: "delete", icon: "🗑" };
-
+  const { t } = useI18n();
   return (
-    <div className="flex flex-wrap gap-1">
-      {actions.map((a) => (
+    <div className="hidden flex-wrap gap-1 md:flex">
+      {actions.filter((item) => item.action !== "edit").map((item) => (
         <button
-          key={a.action}
-          onClick={() => onAction(a.action, personId)}
-          className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-          title={a.label}
+          key={item.action}
+          onClick={() => onAction(item.action, personId)}
+          className={`rounded border px-2 py-1 text-xs transition-colors ${
+            item.destructive
+              ? "border-red-200 text-red-500 hover:border-red-300 hover:bg-red-50"
+              : "border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+          }`}
+          title={t(item.labelKey)}
+          aria-label={t(item.labelKey)}
         >
-          {a.icon}
+          {item.icon}
         </button>
       ))}
-      {adminView && (
-        <button
-          onClick={() => onAction(deleteAction.action, personId)}
-          className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors"
-          title={deleteAction.label}
-        >
-          {deleteAction.icon}
-        </button>
-      )}
     </div>
   );
 }

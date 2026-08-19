@@ -6,11 +6,13 @@ import DetailPanel from "@/components/DetailPanel";
 import ContextMenu from "@/components/ContextMenu";
 import PersonForm from "@/components/PersonForm";
 import PersonSearch, { type SearchablePerson } from "@/components/PersonSearch";
+import PersonActionSheet from "@/components/PersonActionSheet";
 import { getGraph, listPersons, getPerson, createPerson, updatePerson, deletePerson, createRelationship, deactivateRelationship, getStorageConfig } from "@/lib/api";
 import type { GraphData, PersonNode, GraphEdge } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
 import { useToast } from "@/components/ToastProvider";
+import { getPersonActions } from "@/lib/personActions";
 
 /** Strip non-primitive values (e.g. GML graphics objects) so React won't
  *  choke when rendering person fields. */
@@ -42,6 +44,7 @@ export default function ExplorePage() {
   const [selectedRelationships, setSelectedRelationships] = useState<GraphEdge[]>([]);
   const [selectedSiblings, setSelectedSiblings] = useState<string[]>([]);
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+  const [actionSheetNodeId, setActionSheetNodeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [formMode, setFormMode] = useState<{ type: "add_child" | "add_spouse" | "add_parent" | "edit"; nodeId: string; spouses?: { id: string; name: string }[] } | null>(null);
   const [otherParentId, setOtherParentId] = useState<string>("");
@@ -52,6 +55,7 @@ export default function ExplorePage() {
   const [devMode, setDevMode] = useState(false);
   const [nodeFocus, setNodeFocus] = useState({ id: "", request: 0 });
   const showMobilePanel = Boolean(formMode || linkMode || selectedPerson);
+  const personActions = getPersonActions(adminView);
 
   const closeSidePanel = () => {
     setFormMode(null);
@@ -101,6 +105,12 @@ export default function ExplorePage() {
     setContextMenu(null);
     if (!nodeId) return;
     await handleAction(action, nodeId);
+  };
+
+  const handleSheetAction = async (action: string) => {
+    const nodeId = actionSheetNodeId;
+    setActionSheetNodeId(null);
+    if (nodeId) await handleAction(action, nodeId);
   };
 
   const handleAction = async (action: string, nodeId: string) => {
@@ -276,6 +286,7 @@ export default function ExplorePage() {
             onNodeClick={handleNodeClick}
             onNodeDblClick={(nodeId) => setRootId(nodeId)}
             onContextMenu={handleContextMenu}
+            onNodeLongPress={setActionSheetNodeId}
             relationshipColors={EDGE_COLORS}
             focusNodeId={nodeFocus.id}
             focusRequest={nodeFocus.request}
@@ -284,20 +295,20 @@ export default function ExplorePage() {
             <ContextMenu
               x={contextMenu.x}
               y={contextMenu.y}
-              items={[
-                { label: t("menu.centerOn"), action: "center" },
-                { label: `📖 ${t("story.viewStory")}`, action: "story" },
-                { label: t("menu.addChild"), action: "add_child" },
-                { label: t("menu.addSpouse"), action: "add_spouse" },
-                { label: t("menu.addParent"), action: "add_parent" },
-                { label: t("menu.linkChild"), action: "link_child" },
-                { label: t("menu.linkSpouse"), action: "link_spouse" },
-                { label: t("menu.linkParent"), action: "link_parent" },
-                { label: t("menu.editPerson"), action: "edit" },
-                { label: t("menu.deletePerson"), action: "delete" },
-              ]}
+              items={personActions.map((item) => ({
+                label: t(item.labelKey),
+                action: item.action,
+              }))}
               onSelect={handleContextAction}
               onClose={() => setContextMenu(null)}
+            />
+          )}
+          {actionSheetNodeId && (
+            <PersonActionSheet
+              personName={personList.find((person) => person.id === actionSheetNodeId)?.fullname || t("search.unknown")}
+              actions={personActions}
+              onSelect={handleSheetAction}
+              onClose={() => setActionSheetNodeId(null)}
             />
           )}
         </div>
@@ -396,6 +407,8 @@ export default function ExplorePage() {
                 }
               }}
               onAction={handleAction}
+              actions={personActions}
+              onOpenActions={setActionSheetNodeId}
             />
           )}
         </div>

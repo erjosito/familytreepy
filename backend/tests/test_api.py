@@ -45,7 +45,7 @@ def test_health(client, monkeypatch):
     assert resp.status_code == 200
     assert resp.json() == {
         "status": "ok",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "revision": "test-revision",
         "built_at": "2026-08-19T12:00:00Z",
     }
