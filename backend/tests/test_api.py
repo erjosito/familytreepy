@@ -37,10 +37,18 @@ def client():
 # Health
 # ------------------------------------------------------------------
 
-def test_health(client):
+def test_health(client, monkeypatch):
+    monkeypatch.setenv("APP_REVISION", "test-revision")
+    monkeypatch.setenv("APP_BUILD_TIME", "2026-08-19T12:00:00Z")
+
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
+    assert resp.json() == {
+        "status": "ok",
+        "version": "0.1.0",
+        "revision": "test-revision",
+        "built_at": "2026-08-19T12:00:00Z",
+    }
 
 
 # ------------------------------------------------------------------

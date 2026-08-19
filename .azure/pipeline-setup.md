@@ -69,7 +69,21 @@ the production container before deployment. The deploy job then:
 2. Discovers the existing app's Azure Container Registry.
 3. Pushes an immutable image tagged with the Git commit SHA.
 4. Updates the Container App to a new revision.
-5. Calls `/api/health` on the public Container App URL.
+5. Calls `/api/health` on the public Container App URL and verifies that its
+   `revision` exactly matches the commit SHA being deployed. A healthy response
+   from an older revision does not count as a successful deployment.
+
+The health response also exposes the semantic application `version`, immutable
+Git `revision`, and UTC `built_at` timestamp:
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "revision": "<full-git-commit-sha>",
+  "built_at": "2026-08-19T13:30:00Z"
+}
+```
 
 Application runtime settings and secrets remain on the existing Container App;
 the workflow changes only its container image.
