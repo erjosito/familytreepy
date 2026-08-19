@@ -83,6 +83,18 @@ current_image="$(az containerapp show \
   --query 'properties.template.containers[0].image' \
   --output tsv)"
 registry_server="${current_image%%/*}"
+frontend_client_id="$(az containerapp show \
+  --name "$CONTAINER_APP_NAME" \
+  --resource-group "$APP_RESOURCE_GROUP" \
+  --subscription "$SUBSCRIPTION_ID" \
+  --query "properties.template.containers[0].env[?name=='AZURE_AD_CLIENT_ID'].value | [0]" \
+  --output tsv)"
+frontend_tenant_id="$(az containerapp show \
+  --name "$CONTAINER_APP_NAME" \
+  --resource-group "$APP_RESOURCE_GROUP" \
+  --subscription "$SUBSCRIPTION_ID" \
+  --query "properties.template.containers[0].env[?name=='AZURE_AD_TENANT_ID'].value | [0]" \
+  --output tsv)"
 
 if [[ -z "$registry_server" || "$registry_server" == "$current_image" || "$registry_server" != *.azurecr.io ]]; then
   echo "The Container App must already reference an Azure Container Registry image." >&2
@@ -111,4 +123,11 @@ printf 'gh variable set AZURE_TENANT_ID --repo %s --env %s --body "%s"\n' "$GITH
 printf 'gh variable set AZURE_SUBSCRIPTION_ID --repo %s --env %s --body "%s"\n' "$GITHUB_REPOSITORY" "$GITHUB_ENVIRONMENT" "$SUBSCRIPTION_ID"
 printf 'gh variable set AZURE_RESOURCE_GROUP --repo %s --env %s --body "%s"\n' "$GITHUB_REPOSITORY" "$GITHUB_ENVIRONMENT" "$APP_RESOURCE_GROUP"
 printf 'gh variable set AZURE_CONTAINER_APP_NAME --repo %s --env %s --body "%s"\n\n' "$GITHUB_REPOSITORY" "$GITHUB_ENVIRONMENT" "$CONTAINER_APP_NAME"
+if [[ -n "$frontend_client_id" && -n "$frontend_tenant_id" ]]; then
+  printf 'gh variable set NEXT_PUBLIC_AZURE_AD_CLIENT_ID --repo %s --env %s --body "%s"\n' "$GITHUB_REPOSITORY" "$GITHUB_ENVIRONMENT" "$frontend_client_id"
+  printf 'gh variable set NEXT_PUBLIC_AZURE_AD_TENANT_ID --repo %s --env %s --body "%s"\n\n' "$GITHUB_REPOSITORY" "$GITHUB_ENVIRONMENT" "$frontend_tenant_id"
+else
+  printf '# Add NEXT_PUBLIC_AZURE_AD_CLIENT_ID and NEXT_PUBLIC_AZURE_AD_TENANT_ID manually if frontend authentication is enabled.\n\n'
+fi
 printf 'gh variable set DEPLOYMENT_ENABLED --repo %s --body "true"\n\n' "$GITHUB_REPOSITORY"
+printf 'gh workflow run "Build and deploy" --repo %s --ref main\n\n' "$GITHUB_REPOSITORY"

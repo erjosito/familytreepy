@@ -35,10 +35,13 @@ The Cloud Shell script prints the exact `gh` commands needed to create the
 `production` environment and its deployment variables. The last command sets
 the repository variable `DEPLOYMENT_ENABLED=true`; until then, pushes validate
 the application but skip Azure deployment. Run the commands in an authenticated
-GitHub CLI session.
+GitHub CLI session. The final printed command starts a manual deployment from
+`main`.
 
-If authentication is enabled in the deployed frontend, also configure these
-public build-time identifiers:
+When the existing Container App exposes its Entra IDs as regular environment
+values, the script includes these public build-time identifiers automatically.
+If it cannot discover them because they are secret references, configure them
+manually:
 
 ```bash
 gh variable set NEXT_PUBLIC_AZURE_AD_CLIENT_ID \
