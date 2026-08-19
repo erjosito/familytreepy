@@ -10,7 +10,7 @@ from slowapi.errors import RateLimitExceeded
 
 from backend.app.routers import persons, relationships, graph, auth_router, geni
 
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.2.0"
 
 app = FastAPI(
     title="Family Tree API",

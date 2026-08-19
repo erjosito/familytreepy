@@ -46,7 +46,7 @@ export async function getGraph(
 
 // ── Persons ──────────────────────────────────────────────────────────────
 
-export async function listPersons(): Promise<{ id: string; fullname: string }[]> {
+export async function listPersons(): Promise<{ id: string; fullname: string; alias?: string }[]> {
   const res = await apiFetch("/api/persons");
   return res.json();
 }
