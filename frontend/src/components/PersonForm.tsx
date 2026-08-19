@@ -9,11 +9,19 @@ interface Props {
   mode: "add" | "edit";
   initialData?: Record<string, unknown>;
   title: string;
-  onSubmit: (data: Record<string, unknown>) => void;
+  submitting?: boolean;
+  onSubmit: (data: Record<string, unknown>) => void | Promise<void>;
   onCancel: () => void;
 }
 
-export default function PersonForm({ mode, initialData = {}, title, onSubmit, onCancel }: Props) {
+export default function PersonForm({
+  mode,
+  initialData = {},
+  title,
+  submitting = false,
+  onSubmit,
+  onCancel,
+}: Props) {
   const { t } = useI18n();
   const [schema, setSchema] = useState<Record<string, FieldConfig>>({});
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData);
@@ -81,14 +89,16 @@ export default function PersonForm({ mode, initialData = {}, title, onSubmit, on
       <div className="flex gap-2 pt-2">
         <button
           type="submit"
-          className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+          disabled={submitting}
+          className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {mode === "add" ? t("form.create") : t("form.save")}
+          {submitting ? t("form.saving") : mode === "add" ? t("form.create") : t("form.save")}
         </button>
         <button
           type="button"
+          disabled={submitting}
           onClick={onCancel}
-          className="px-4 py-1.5 bg-gray-200 border border-gray-300 text-gray-700 text-sm rounded hover:bg-gray-300"
+          className="px-4 py-1.5 bg-gray-200 border border-gray-300 text-gray-700 text-sm rounded hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {t("form.cancel")}
         </button>
