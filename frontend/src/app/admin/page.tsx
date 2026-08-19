@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { listUsers, addUser, updateUser, deleteUser } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { useToast } from "@/components/ToastProvider";
 
 interface User {
   email: string;
@@ -11,6 +12,7 @@ interface User {
 
 export default function AdminPage() {
   const { t } = useI18n();
+  const toast = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +25,7 @@ export default function AdminPage() {
   // Edit state
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<User>({ email: "", role: "" });
+  const [busyEmail, setBusyEmail] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
@@ -50,8 +53,10 @@ export default function AdminPage() {
       setNewEmail("");
       setNewRole("user");
       await refresh();
+      toast.success(t("toast.userAdded"));
     } catch (err) {
       setError(String(err));
+      toast.error(t("toast.userAddFailed"));
     } finally {
       setAdding(false);
     }
@@ -59,12 +64,20 @@ export default function AdminPage() {
 
   const handleDelete = async (email: string) => {
     if (!confirm(`${t("admin.confirmRemove")} "${email}"?`)) return;
+    if (busyEmail) return;
+    setBusyEmail(email);
     setError(null);
     try {
       await deleteUser(email);
       await refresh();
+      toast.success(t("toast.userDeleted"));
     } catch (err) {
       setError(String(err));
+      toast.error(t("toast.userDeleteFailed"), {
+        action: { label: t("toast.retry"), onClick: () => handleDelete(email) },
+      });
+    } finally {
+      setBusyEmail(null);
     }
   };
 
@@ -78,14 +91,21 @@ export default function AdminPage() {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingEmail) return;
+    if (!editingEmail || busyEmail) return;
+    setBusyEmail(editingEmail);
     setError(null);
     try {
       await updateUser(editingEmail, editDraft.email, editDraft.role);
       setEditingEmail(null);
       await refresh();
+      toast.success(t("toast.userSaved"));
     } catch (err) {
       setError(String(err));
+      toast.error(t("toast.userSaveFailed"), {
+        action: { label: t("toast.retry"), onClick: handleSaveEdit },
+      });
+    } finally {
+      setBusyEmail(null);
     }
   };
 
@@ -150,13 +170,15 @@ export default function AdminPage() {
                       <td className="px-4 py-2 text-right">
                         <button
                           onClick={handleSaveEdit}
-                          className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 mr-1"
+                          disabled={busyEmail === editingEmail}
+                          className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 mr-1 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {t("admin.save")}
                         </button>
                         <button
                           onClick={cancelEdit}
-                          className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
+                          disabled={busyEmail === editingEmail}
+                          className="text-xs px-2 py-1 border rounded hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {t("admin.cancel")}
                         </button>
@@ -185,7 +207,8 @@ export default function AdminPage() {
                         </button>
                         <button
                           onClick={() => handleDelete(user.email)}
-                          className="text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50"
+                          disabled={busyEmail === user.email}
+                          className="text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {t("admin.remove")}
                         </button>

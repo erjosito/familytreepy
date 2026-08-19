@@ -8,6 +8,7 @@ import type { PersonNode, GraphEdge } from "@/lib/types";
 import { useAdminView } from "@/lib/adminView";
 import { useI18n } from "@/lib/i18n";
 import { formatDate, formatTimestamp } from "@/lib/dateUtils";
+import { useToast } from "@/components/ToastProvider";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TFunc = (key: any) => string;
@@ -27,6 +28,7 @@ function PersonPageContent() {
   const personId = searchParams.get("id") || "";
   const { userEmail, userName, isAdmin, adminView } = useAdminView();
   const { t } = useI18n();
+  const toast = useToast();
 
   const [person, setPerson] = useState<PersonNode | null>(null);
   const [relationships, setRelationships] = useState<GraphEdge[]>([]);
@@ -37,6 +39,7 @@ function PersonPageContent() {
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [deletingNoteIndex, setDeletingNoteIndex] = useState<number | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const noteAuthor = userName && userEmail
@@ -99,19 +102,27 @@ function PersonPageContent() {
       await addNote(personId, newNote.trim(), noteAuthor);
       setNewNote("");
       await refreshNotes();
+      toast.success(t("toast.noteAdded"));
     } catch (err) {
       console.error("Failed to add note:", err);
+      toast.error(t("toast.noteAddFailed"));
     } finally {
       setAddingNote(false);
     }
   };
 
   const handleDeleteNote = async (index: number) => {
+    if (deletingNoteIndex !== null) return;
+    setDeletingNoteIndex(index);
     try {
       await deleteNote(personId, index);
       await refreshNotes();
+      toast.success(t("toast.noteDeleted"));
     } catch (err) {
       console.error("Failed to delete note:", err);
+      toast.error(t("toast.noteDeleteFailed"));
+    } finally {
+      setDeletingNoteIndex(null);
     }
   };
 
@@ -296,7 +307,8 @@ function PersonPageContent() {
                   {adminView && (
                     <button
                       onClick={() => handleDeleteNote(i)}
-                      className="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      disabled={deletingNoteIndex !== null}
+                      className="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                       title={t("notes.delete")}
                     >
                       ✕
@@ -365,9 +377,12 @@ function ProfileHeader({
   t: TFunc;
 }) {
   const { adminView } = useAdminView();
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [removingProfilePic, setRemovingProfilePic] = useState(false);
+  const [deletingPerson, setDeletingPerson] = useState(false);
   const [draft, setDraft] = useState({
     firstname: "",
     lastname: "",
@@ -397,8 +412,12 @@ function ProfileHeader({
       await updatePerson(person.id, draft);
       setEditing(false);
       onUpdated();
+      toast.success(t("toast.personSaved"));
     } catch (err) {
       console.error("Save failed:", err);
+      toast.error(t("toast.personSaveFailed"), {
+        action: { label: t("toast.retry"), onClick: handleSave },
+      });
     } finally {
       setSaving(false);
     }
@@ -411,6 +430,39 @@ function ProfileHeader({
     const reader = new FileReader();
     reader.onload = () => setCropSrc(reader.result as string);
     reader.readAsDataURL(file);
+  };
+
+  const handleRemoveProfilePic = async () => {
+    if (removingProfilePic || !confirm(t("detail.deletePhoto"))) return;
+    setRemovingProfilePic(true);
+    try {
+      await updatePerson(person.id, { profilepic: "" });
+      onUpdated();
+      toast.success(t("toast.photoRemoved"));
+    } catch (err) {
+      console.error("Profile photo removal failed:", err);
+      toast.error(t("toast.photoRemoveFailed"), {
+        action: { label: t("toast.retry"), onClick: handleRemoveProfilePic },
+      });
+    } finally {
+      setRemovingProfilePic(false);
+    }
+  };
+
+  const handleDeletePerson = async () => {
+    if (deletingPerson || !confirm(t("confirm.deletePerson"))) return;
+    setDeletingPerson(true);
+    try {
+      await deletePerson(person.id);
+      toast.success(t("toast.personDeleted"));
+      window.location.href = "/";
+    } catch (err) {
+      console.error("Delete person failed:", err);
+      toast.error(t("toast.personDeleteFailed"), {
+        action: { label: t("toast.retry"), onClick: handleDeletePerson },
+      });
+      setDeletingPerson(false);
+    }
   };
 
   return (
@@ -436,12 +488,9 @@ function ProfileHeader({
             </label>
             {person.profilepic && (
               <button
-                onClick={async () => {
-                  if (!confirm(t("detail.deletePhoto"))) return;
-                  await updatePerson(person.id, { profilepic: "" });
-                  onUpdated();
-                }}
-                className="hover:underline text-red-300"
+                onClick={handleRemoveProfilePic}
+                disabled={removingProfilePic}
+                className="hover:underline text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t("detail.removePhoto")}
               </button>
@@ -618,13 +667,9 @@ function ProfileHeader({
                 </button>
                 {adminView && (
                   <button
-                    onClick={async () => {
-                      if (confirm(t("confirm.deletePerson"))) {
-                        await deletePerson(person.id);
-                        window.location.href = "/";
-                      }
-                    }}
-                    className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50"
+                    onClick={handleDeletePerson}
+                    disabled={deletingPerson}
+                    className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     🗑 {t("menu.deletePerson")}
                   </button>
@@ -674,6 +719,7 @@ function ProfileCropModal({
   onCancel: () => void;
   t: TFunc;
 }) {
+  const toast = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -740,9 +786,11 @@ function ProfileCropModal({
       setUploading(true);
       try {
         await uploadProfilePic(personId, blob, "profile.jpg");
+        toast.success(t("toast.photoUpdated"));
         onDone();
       } catch (err) {
         console.error("Upload failed:", err);
+        toast.error(t("toast.photoUploadFailed"));
       } finally {
         setUploading(false);
       }
@@ -790,7 +838,8 @@ function ProfileCropModal({
           </button>
           <button
             onClick={onCancel}
-            className="px-4 py-1.5 bg-gray-200 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
+            disabled={uploading}
+            className="px-4 py-1.5 bg-gray-200 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("form.cancel")}
           </button>
@@ -822,6 +871,7 @@ function PersonPictures({
   t: TFunc;
   adminView: boolean;
 }) {
+  const toast = useToast();
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<{ file: File; dataUrl: string } | null>(null);
   const [taggedIds, setTaggedIds] = useState<string[]>([]);
@@ -852,8 +902,10 @@ function PersonPictures({
       setPreview(null);
       setTaggedIds([]);
       onUpdated();
+      toast.success(t("toast.photoUploaded"));
     } catch (err) {
       console.error("Upload failed:", err);
+      toast.error(t("toast.photoUploadFailed"));
     } finally {
       setUploading(false);
     }
@@ -864,8 +916,12 @@ function PersonPictures({
     try {
       await removePicture(personId, url);
       onUpdated();
+      toast.success(t("toast.photoRemoved"));
     } catch (err) {
       console.error("Remove failed:", err);
+      toast.error(t("toast.photoRemoveFailed"), {
+        action: { label: t("toast.retry"), onClick: () => handleRemove(url) },
+      });
     } finally {
       setRemoving(null);
     }
@@ -1023,32 +1079,50 @@ function PictureCard({
   onUpdated: () => void;
   t: TFunc;
 }) {
+  const toast = useToast();
   const [people, setPeople] = useState<{ id: string; fullname: string }[]>([]);
   const [showTagEditor, setShowTagEditor] = useState(false);
   const [tagQuery, setTagQuery] = useState("");
+  const [taggingId, setTaggingId] = useState<string | null>(null);
 
   useEffect(() => {
     getPeopleInPicture(personId, url).then(setPeople).catch(() => setPeople([]));
   }, [personId, url]);
 
   const handleUntag = async (targetId: string) => {
+    if (taggingId) return;
+    setTaggingId(targetId);
     try {
       await untagPicture(personId, url, targetId);
       setPeople((prev) => prev.filter((p) => p.id !== targetId));
       onUpdated();
+      toast.success(t("toast.photoTagUpdated"));
     } catch (err) {
       console.error("Untag failed:", err);
+      toast.error(t("toast.photoTagFailed"), {
+        action: { label: t("toast.retry"), onClick: () => handleUntag(targetId) },
+      });
+    } finally {
+      setTaggingId(null);
     }
   };
 
   const handleTag = async (targetId: string) => {
+    if (taggingId) return;
+    setTaggingId(targetId);
     try {
       await tagPicture(personId, url, [targetId]);
       const added = personList.find((p) => p.id === targetId);
       if (added) setPeople((prev) => [...prev, added]);
       setTagQuery("");
+      toast.success(t("toast.photoTagUpdated"));
     } catch (err) {
       console.error("Tag failed:", err);
+      toast.error(t("toast.photoTagFailed"), {
+        action: { label: t("toast.retry"), onClick: () => handleTag(targetId) },
+      });
+    } finally {
+      setTaggingId(null);
     }
   };
 
@@ -1106,7 +1180,8 @@ function PictureCard({
                 <button
                   key={p.id}
                   onClick={() => handleUntag(p.id)}
-                  className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-blue-700 hover:bg-red-100 hover:border-red-300 hover:text-red-700"
+                  disabled={taggingId !== null}
+                  className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-blue-700 hover:bg-red-100 hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                   title={`Untag ${p.fullname}`}
                 >
                   {p.fullname} ✕
@@ -1117,6 +1192,7 @@ function PictureCard({
           {/* Search to add */}
           <input
             type="text"
+            disabled={taggingId !== null}
             value={tagQuery}
             onChange={(e) => setTagQuery(e.target.value)}
             placeholder={t("tag.searchPlaceholder")}
@@ -1128,7 +1204,8 @@ function PictureCard({
                 <button
                   key={p.id}
                   onClick={() => handleTag(p.id)}
-                  className="w-full text-left px-2 py-1 text-xs hover:bg-blue-50 border-b last:border-b-0 text-gray-900"
+                  disabled={taggingId !== null}
+                  className="w-full text-left px-2 py-1 text-xs hover:bg-blue-50 border-b last:border-b-0 text-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {p.fullname}
                 </button>
@@ -1158,6 +1235,7 @@ function RelDeleteBtn({
   onDeleted: () => void;
   t: TFunc;
 }) {
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
 
   const handleDelete = async () => {
@@ -1166,8 +1244,12 @@ function RelDeleteBtn({
     try {
       await deleteRelationship(source, target);
       onDeleted();
+      toast.success(t("toast.relationshipDeleted"));
     } catch (err) {
       console.error("Delete failed:", err);
+      toast.error(t("toast.relationshipDeleteFailed"), {
+        action: { label: t("toast.retry"), onClick: handleDelete },
+      });
     } finally {
       setBusy(false);
     }
@@ -1201,6 +1283,7 @@ function SpouseToggle({
   onToggled: () => void;
   t: TFunc;
 }) {
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
 
   const handleToggle = async () => {
@@ -1212,8 +1295,12 @@ function SpouseToggle({
         await reactivateRelationship(source, target);
       }
       onToggled();
+      toast.success(t("toast.relationshipUpdated"));
     } catch (err) {
       console.error("Toggle failed:", err);
+      toast.error(t("toast.relationshipUpdateFailed"), {
+        action: { label: t("toast.retry"), onClick: handleToggle },
+      });
     } finally {
       setBusy(false);
     }

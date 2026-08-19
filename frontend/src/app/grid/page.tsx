@@ -6,6 +6,7 @@ import { useAdminView } from "@/lib/adminView";
 import { useI18n } from "@/lib/i18n";
 import { formatDate } from "@/lib/dateUtils";
 import Link from "next/link";
+import { useToast } from "@/components/ToastProvider";
 
 interface PersonRow {
   id: string;
@@ -23,11 +24,13 @@ interface PersonRow {
 export default function GridPage() {
   const { adminView } = useAdminView();
   const { t } = useI18n();
+  const toast = useToast();
   const [persons, setPersons] = useState<PersonRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<PersonRow>>({});
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof PersonRow>("lastname");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [filter, setFilter] = useState("");
@@ -98,8 +101,12 @@ export default function GridPage() {
       });
       setEditingId(null);
       await fetchAll();
+      toast.success(t("toast.personSaved"));
     } catch (err) {
       console.error("Save failed:", err);
+      toast.error(t("toast.personSaveFailed"), {
+        action: { label: t("toast.retry"), onClick: saveEdit },
+      });
     } finally {
       setSaving(false);
     }
@@ -309,15 +316,21 @@ export default function GridPage() {
                           </button>
                           <button
                             onClick={async () => {
-                              if (!confirm(t("confirm.deletePerson"))) return;
+                              if (deletingId || !confirm(t("confirm.deletePerson"))) return;
+                              setDeletingId(p.id);
                               try {
                                 await deletePerson(p.id);
                                 await fetchAll();
+                                toast.success(t("toast.personDeleted"));
                               } catch (err) {
                                 console.error("Delete failed:", err);
+                                toast.error(t("toast.personDeleteFailed"));
+                              } finally {
+                                setDeletingId(null);
                               }
                             }}
-                            className="text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50"
+                            disabled={deletingId === p.id}
+                            className="text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {t("admin.remove")}
                           </button>

@@ -9,6 +9,7 @@ import { getGraph, listPersons, getPerson, createPerson, updatePerson, deletePer
 import type { GraphData, PersonNode, GraphEdge } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
+import { useToast } from "@/components/ToastProvider";
 
 /** Strip non-primitive values (e.g. GML graphics objects) so React won't
  *  choke when rendering person fields. */
@@ -30,6 +31,7 @@ const EDGE_COLORS: Record<string, string> = {
 
 export default function ExplorePage() {
   const { t } = useI18n();
+  const toast = useToast();
   const { adminView } = useAdminView();
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [personList, setPersonList] = useState<{ id: string; fullname: string }[]>([]);
@@ -105,11 +107,21 @@ export default function ExplorePage() {
     } else if (action === "story") {
       window.location.href = `/story/?id=${nodeId}&degree=3`;
     } else if (action === "delete") {
-      if (confirm(t("confirm.deletePerson"))) {
+      if (!confirm(t("confirm.deletePerson")) || submitting) return;
+      setSubmitting(true);
+      try {
         await deletePerson(nodeId);
         setSelectedPerson(null);
         await fetchGraph();
-        listPersons().then(setPersonList);
+        listPersons().then(setPersonList).catch(console.error);
+        toast.success(t("toast.personDeleted"));
+      } catch (err) {
+        console.error("Delete person failed:", err);
+        toast.error(t("toast.personDeleteFailed"), {
+          action: { label: t("toast.retry"), onClick: () => handleAction("delete", nodeId) },
+        });
+      } finally {
+        setSubmitting(false);
       }
     } else if (action === "edit" || action === "add_child" || action === "add_spouse" || action === "add_parent") {
       setLinkMode(null);
@@ -149,6 +161,7 @@ export default function ExplorePage() {
     try {
       if (formMode.type === "edit") {
         await updatePerson(formMode.nodeId, data);
+        toast.success(t("toast.personSaved"));
       } else {
         const result = await createPerson(data);
         const relType = formMode.type === "add_spouse" ? "isSpouseOf" : "isChildOf";
@@ -163,12 +176,19 @@ export default function ExplorePage() {
           await createRelationship({ source: formMode.nodeId, target: result.id, type: relType });
           await createRelationship({ source: result.id, target: formMode.nodeId, type: relType });
         }
+        toast.success(t("toast.personCreated"));
       }
       setFormMode(null);
       await fetchGraph();
-      listPersons().then(setPersonList);
+      listPersons().then(setPersonList).catch(console.error);
     } catch (err) {
       console.error("Form submit error:", err);
+      const isEdit = formMode.type === "edit";
+      toast.error(t(isEdit ? "toast.personSaveFailed" : "toast.personCreateFailed"), isEdit ? {
+        action: { label: t("toast.retry"), onClick: () => handleFormSubmit(data) },
+      } : undefined);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -292,6 +312,7 @@ export default function ExplorePage() {
                   formMode.type === "add_child" ? t("form.addChild") :
                   formMode.type === "add_spouse" ? t("form.addSpouse") : t("form.addParent")
                 }
+                submitting={submitting}
                 onSubmit={handleFormSubmit}
                 onCancel={() => setFormMode(null)}
               />
@@ -317,6 +338,8 @@ export default function ExplorePage() {
               linkMode={linkMode}
               personList={personList}
               onLink={async (targetId) => {
+                if (submitting) return;
+                setSubmitting(true);
                 try {
                   if (linkMode.type === "link_child") {
                     await createRelationship({ source: targetId, target: linkMode.nodeId, type: "isChildOf" });
@@ -328,11 +351,16 @@ export default function ExplorePage() {
                   }
                   setLinkMode(null);
                   await fetchGraph();
-                  listPersons().then(setPersonList);
+                  listPersons().then(setPersonList).catch(console.error);
+                  toast.success(t("toast.relationshipCreated"));
                 } catch (err) {
                   console.error("Link failed:", err);
+                  toast.error(t("toast.relationshipCreateFailed"));
+                } finally {
+                  setSubmitting(false);
                 }
               }}
+              submitting={submitting}
               onCancel={() => setLinkMode(null)}
               t={t}
             />
@@ -372,12 +400,14 @@ function LinkPersonPanel({
   personList,
   onLink,
   onCancel,
+  submitting,
   t,
 }: {
   linkMode: { type: string; nodeId: string };
   personList: { id: string; fullname: string }[];
-  onLink: (targetId: string) => void;
+  onLink: (targetId: string) => void | Promise<void>;
   onCancel: () => void;
+  submitting: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   t: (key: any) => string;
 }) {
@@ -413,8 +443,9 @@ function LinkPersonPanel({
           {filtered.map((p) => (
             <button
               key={p.id}
+              disabled={submitting}
               onClick={() => onLink(p.id)}
-              className="w-full text-left px-3 py-2 text-sm text-gray-900 hover:bg-blue-50 transition-colors"
+              className="w-full text-left px-3 py-2 text-sm text-gray-900 hover:bg-blue-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
             >
               {p.fullname}
             </button>
@@ -426,8 +457,9 @@ function LinkPersonPanel({
       )}
 
       <button
+        disabled={submitting}
         onClick={onCancel}
-        className="px-4 py-1.5 bg-gray-200 border border-gray-300 text-gray-700 text-sm rounded hover:bg-gray-300"
+        className="px-4 py-1.5 bg-gray-200 border border-gray-300 text-gray-700 text-sm rounded hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {t("form.cancel")}
       </button>

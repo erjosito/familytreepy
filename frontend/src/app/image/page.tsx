@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { listPersons, listRenderers, generateImage } from "@/lib/api";
 import type { RendererInfo } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
+import { useToast } from "@/components/ToastProvider";
 
 const COLOR_SCHEMES = [
   { value: "sepia", label: "Sepia" },
@@ -14,6 +15,7 @@ const COLOR_SCHEMES = [
 
 export default function ImagePage() {
   const { t } = useI18n();
+  const toast = useToast();
   const [personList, setPersonList] = useState<{ id: string; fullname: string }[]>([]);
   const [renderers, setRenderers] = useState<RendererInfo[]>([]);
   const [rootId, setRootId] = useState("");
@@ -54,8 +56,13 @@ export default function ImagePage() {
       });
       const url = URL.createObjectURL(blob);
       setImageUrl(url);
+      toast.success(t("toast.imageGenerated"));
     } catch (err) {
+      console.error("Image generation failed:", err);
       setError(String(err));
+      toast.error(t("toast.imageGenerateFailed"), {
+        action: { label: t("toast.retry"), onClick: handleGenerate },
+      });
     } finally {
       setLoading(false);
     }
