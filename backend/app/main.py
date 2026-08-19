@@ -10,10 +10,12 @@ from slowapi.errors import RateLimitExceeded
 
 from backend.app.routers import persons, relationships, graph, auth_router, geni
 
+APP_VERSION = "0.1.0"
+
 app = FastAPI(
     title="Family Tree API",
     description="API for creating and browsing family trees",
-    version="0.1.0",
+    version=APP_VERSION,
 )
 
 # Rate limiting
@@ -38,7 +40,12 @@ app.include_router(geni.router)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "version": APP_VERSION,
+        "revision": os.getenv("APP_REVISION", "development"),
+        "built_at": os.getenv("APP_BUILD_TIME", "unknown"),
+    }
 
 
 # --- Serve Next.js static export in production ---

@@ -57,13 +57,17 @@ jobs:
         run: npm run build
 
       - name: Build production container
-        run: >-
-          docker build
-          --file Dockerfile.prod
-          --tag familytreepy:${{ github.sha }}
-          --build-arg NEXT_PUBLIC_AZURE_AD_CLIENT_ID="${{ vars.NEXT_PUBLIC_AZURE_AD_CLIENT_ID }}"
-          --build-arg NEXT_PUBLIC_AZURE_AD_TENANT_ID="${{ vars.NEXT_PUBLIC_AZURE_AD_TENANT_ID }}"
-          .
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --file Dockerfile.prod \
+            --tag "familytreepy:${{ github.sha }}" \
+            --build-arg APP_REVISION="${{ github.sha }}" \
+            --build-arg APP_BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --build-arg NEXT_PUBLIC_AZURE_AD_CLIENT_ID="${{ vars.NEXT_PUBLIC_AZURE_AD_CLIENT_ID }}" \
+            --build-arg NEXT_PUBLIC_AZURE_AD_TENANT_ID="${{ vars.NEXT_PUBLIC_AZURE_AD_TENANT_ID }}" \
+            .
 
   deploy:
     name: Deploy production
@@ -118,6 +122,8 @@ jobs:
           docker build \
             --file Dockerfile.prod \
             --tag "$image" \
+            --build-arg APP_REVISION="${{ github.sha }}" \
+            --build-arg APP_BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
             --build-arg NEXT_PUBLIC_AZURE_AD_CLIENT_ID="${{ vars.NEXT_PUBLIC_AZURE_AD_CLIENT_ID }}" \
             --build-arg NEXT_PUBLIC_AZURE_AD_TENANT_ID="${{ vars.NEXT_PUBLIC_AZURE_AD_TENANT_ID }}" \
             .
@@ -154,12 +160,22 @@ jobs:
         run: |
           set -euo pipefail
           health_url="${{ steps.deploy.outputs.url }}/api/health"
+          expected_revision="${{ github.sha }}"
+          deployed_revision=""
           for attempt in {1..12}; do
-            if curl --fail --silent --show-error --max-time 15 "$health_url"; then
-              exit 0
+            if response="$(curl --fail --silent --show-error --max-time 15 "$health_url")"; then
+              deployed_revision="$(python -c \
+                'import json, sys; print(json.load(sys.stdin).get("revision", ""))' \
+                <<< "$response")"
+              if [[ "$deployed_revision" == "$expected_revision" ]]; then
+                echo "$response"
+                echo "Verified deployed revision $deployed_revision"
+                exit 0
+              fi
+              echo "Attempt $attempt: expected revision $expected_revision, received ${deployed_revision:-<missing>}"
             fi
             if [[ "$attempt" -eq 12 ]]; then
-              echo "::error::The deployed application did not become healthy at $health_url"
+              echo "::error::The deployed application at $health_url reported revision ${deployed_revision:-<missing>}, expected $expected_revision"
               exit 1
             fi
             sleep 10
