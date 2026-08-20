@@ -3,13 +3,14 @@
 import { useEffect, useRef, useCallback } from "react";
 import cytoscape, { type Core, type EventObject, type LayoutOptions } from "cytoscape";
 import fcose from "cytoscape-fcose";
+import type { LayoutMode } from "@/lib/graphViewState";
 import type { GraphData } from "@/lib/types";
 
 cytoscape.use(fcose);
 
 const MAX_REFINED_FAMILY_NODES = 350;
 
-export type LayoutMode = "family" | "breadthfirst" | "concentric" | "cose" | "grid" | "circle";
+export type { LayoutMode } from "@/lib/graphViewState";
 
 export const LAYOUT_OPTIONS: { value: LayoutMode; labelKey: string }[] = [
   { value: "family", labelKey: "layout.family" },
