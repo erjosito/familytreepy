@@ -76,6 +76,10 @@ const translations = {
     "form.cancel": "Cancel",
     "form.otherParent": "Other parent",
     "form.noOtherParent": "None (single parent)",
+    "validation.errorTitle": "Please correct these issues",
+    "validation.warningTitle": "Please review these warnings",
+    "validation.saveAnyway": "Save anyway",
+    "validation.confirmOverride": "Continue anyway?",
 
     // Confirm
     "confirm.deletePerson": "Delete this person?",
@@ -385,6 +389,10 @@ const translations = {
     "form.cancel": "Cancelar",
     "form.otherParent": "Otro progenitor",
     "form.noOtherParent": "Ninguno (monoparental)",
+    "validation.errorTitle": "Corrige estos problemas",
+    "validation.warningTitle": "Revisa estas advertencias",
+    "validation.saveAnyway": "Guardar de todos modos",
+    "validation.confirmOverride": "¿Continuar de todos modos?",
 
     // Confirm
     "confirm.deletePerson": "¿Eliminar esta persona?",

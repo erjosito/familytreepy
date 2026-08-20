@@ -7,7 +7,19 @@ import ContextMenu from "@/components/ContextMenu";
 import PersonForm from "@/components/PersonForm";
 import PersonSearch, { type SearchablePerson } from "@/components/PersonSearch";
 import PersonActionSheet from "@/components/PersonActionSheet";
-import { getGraph, listPersons, getPerson, createPerson, updatePerson, deletePerson, createRelationship, deactivateRelationship, getStorageConfig } from "@/lib/api";
+import {
+  createPerson,
+  createRelationship,
+  deletePerson,
+  getGraph,
+  getPerson,
+  getStorageConfig,
+  getValidationIssues,
+  listPersons,
+  updatePerson,
+  type PendingPersonRelationship,
+  type ValidationIssue,
+} from "@/lib/api";
 import type { GraphData, PersonNode, GraphEdge } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
@@ -63,6 +75,7 @@ export default function ExplorePage() {
   const [otherParentId, setOtherParentId] = useState<string>("");
   const [linkMode, setLinkMode] = useState<{ type: "link_child" | "link_spouse" | "link_parent"; nodeId: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formValidationIssues, setFormValidationIssues] = useState<ValidationIssue[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("family");
   const [sasToken, setSasToken] = useState("");
   const [devMode, setDevMode] = useState(false);
@@ -300,6 +313,7 @@ export default function ExplorePage() {
     } else if (action === "edit" || action === "add_child" || action === "add_spouse" || action === "add_parent") {
       setLinkMode(null);
       setOtherParentId("");
+      setFormValidationIssues([]);
       if (action === "add_child") {
         const detail = await getPerson(nodeId);
         const rels = (detail.relationships || []) as GraphEdge[];
@@ -317,11 +331,13 @@ export default function ExplorePage() {
         }
         setFormMode({ type: "add_child", nodeId, spouses: spouseList });
       } else {
-        setFormMode({ type: action as "edit" | "add_spouse" | "add_parent", nodeId });
         if (action === "edit") {
           updateSelectedId(nodeId, "push");
           const detail = await getPerson(nodeId);
           setSelectedPerson(sanitizePerson(detail));
+          setFormMode({ type: "edit", nodeId });
+        } else {
+          setFormMode({ type: action as "add_spouse" | "add_parent", nodeId });
         }
       }
     } else if (action === "link_child" || action === "link_spouse" || action === "link_parent") {
@@ -330,37 +346,71 @@ export default function ExplorePage() {
     }
   };
 
-  const handleFormSubmit = async (data: Record<string, unknown>) => {
+  const handleFormSubmit = async (
+    data: Record<string, unknown>,
+    overrideWarnings = false,
+  ) => {
     if (!formMode || submitting) return;
     setSubmitting(true);
     try {
       if (formMode.type === "edit") {
-        await updatePerson(formMode.nodeId, data);
+        await updatePerson(formMode.nodeId, data, overrideWarnings);
         toast.success(t("toast.personSaved"));
       } else {
-        const result = await createPerson(data);
-        const relType = formMode.type === "add_spouse" ? "isSpouseOf" : "isChildOf";
+        const relationships: PendingPersonRelationship[] = [];
         if (formMode.type === "add_child") {
-          await createRelationship({ source: result.id, target: formMode.nodeId, type: "isChildOf" });
+          relationships.push({
+            related_person_id: formMode.nodeId,
+            type: "isChildOf",
+            new_person_role: "source",
+          });
           if (otherParentId) {
-            await createRelationship({ source: result.id, target: otherParentId, type: "isChildOf" });
+            relationships.push({
+              related_person_id: otherParentId,
+              type: "isChildOf",
+              new_person_role: "source",
+            });
           }
         } else if (formMode.type === "add_parent") {
-          await createRelationship({ source: formMode.nodeId, target: result.id, type: "isChildOf" });
+          relationships.push({
+            related_person_id: formMode.nodeId,
+            type: "isChildOf",
+            new_person_role: "target",
+          });
         } else if (formMode.type === "add_spouse") {
-          await createRelationship({ source: formMode.nodeId, target: result.id, type: relType });
-          await createRelationship({ source: result.id, target: formMode.nodeId, type: relType });
+          relationships.push(
+            {
+              related_person_id: formMode.nodeId,
+              type: "isSpouseOf",
+              new_person_role: "target",
+            },
+            {
+              related_person_id: formMode.nodeId,
+              type: "isSpouseOf",
+              new_person_role: "source",
+            },
+          );
         }
+        await createPerson(data, relationships, overrideWarnings);
         toast.success(t("toast.personCreated"));
       }
+      setFormValidationIssues([]);
       setFormMode(null);
       await fetchGraph();
       listPersons().then(setPersonList).catch(console.error);
     } catch (err) {
       console.error("Form submit error:", err);
+      const validationIssues = getValidationIssues(err);
+      if (validationIssues) {
+        setFormValidationIssues(validationIssues);
+        return;
+      }
       const isEdit = formMode.type === "edit";
       toast.error(t(isEdit ? "toast.personSaveFailed" : "toast.personCreateFailed"), isEdit ? {
-        action: { label: t("toast.retry"), onClick: () => handleFormSubmit(data) },
+        action: {
+          label: t("toast.retry"),
+          onClick: () => handleFormSubmit(data, overrideWarnings),
+        },
       } : undefined);
     } finally {
       setSubmitting(false);
@@ -489,6 +539,7 @@ export default function ExplorePage() {
           {formMode ? (
             <div className="p-4">
               <PersonForm
+                key={`${formMode.type}-${formMode.nodeId}`}
                 mode={formMode.type === "edit" ? "edit" : "add"}
                 initialData={formMode.type === "edit" && selectedPerson ? Object.fromEntries(
                   Object.entries(selectedPerson).filter(([k]) => !["id", "fullname", "relationships", "siblings"].includes(k))
@@ -499,8 +550,13 @@ export default function ExplorePage() {
                   formMode.type === "add_spouse" ? t("form.addSpouse") : t("form.addParent")
                 }
                 submitting={submitting}
+                validationIssues={formValidationIssues}
                 onSubmit={handleFormSubmit}
-                onCancel={() => setFormMode(null)}
+                onValidationClear={() => setFormValidationIssues([])}
+                onCancel={() => {
+                  setFormValidationIssues([]);
+                  setFormMode(null);
+                }}
               />
               {/* Other parent selector for add_child */}
               {formMode.type === "add_child" && formMode.spouses && formMode.spouses.length > 0 && (
@@ -508,7 +564,10 @@ export default function ExplorePage() {
                   <label className="block text-sm font-medium text-gray-600 mb-1">{t("form.otherParent")}</label>
                   <select
                     value={otherParentId}
-                    onChange={(e) => setOtherParentId(e.target.value)}
+                    onChange={(e) => {
+                      setOtherParentId(e.target.value);
+                      setFormValidationIssues([]);
+                    }}
                     className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
                   >
                     <option value="">{t("form.noOtherParent")}</option>
@@ -527,13 +586,39 @@ export default function ExplorePage() {
                 if (submitting) return;
                 setSubmitting(true);
                 try {
-                  if (linkMode.type === "link_child") {
-                    await createRelationship({ source: targetId, target: linkMode.nodeId, type: "isChildOf" });
-                  } else if (linkMode.type === "link_parent") {
-                    await createRelationship({ source: linkMode.nodeId, target: targetId, type: "isChildOf" });
-                  } else if (linkMode.type === "link_spouse") {
-                    await createRelationship({ source: linkMode.nodeId, target: targetId, type: "isSpouseOf" });
-                    await createRelationship({ source: targetId, target: linkMode.nodeId, type: "isSpouseOf" });
+                  const relationships =
+                    linkMode.type === "link_child"
+                      ? [{ source: targetId, target: linkMode.nodeId, type: "isChildOf" }]
+                      : linkMode.type === "link_parent"
+                        ? [{ source: linkMode.nodeId, target: targetId, type: "isChildOf" }]
+                        : [
+                            { source: linkMode.nodeId, target: targetId, type: "isSpouseOf" },
+                            { source: targetId, target: linkMode.nodeId, type: "isSpouseOf" },
+                          ];
+                  const saveRelationships = async (overrideWarnings: boolean) => {
+                    for (const relationship of relationships) {
+                      await createRelationship(relationship, overrideWarnings);
+                    }
+                  };
+
+                  try {
+                    await saveRelationships(false);
+                  } catch (err) {
+                    const issues = getValidationIssues(err);
+                    if (
+                      !issues ||
+                      issues.length === 0 ||
+                      issues.some((issue) => issue.severity === "error")
+                    ) {
+                      throw err;
+                    }
+                    const confirmed = window.confirm(
+                      `${t("validation.warningTitle")}\n\n` +
+                      `${issues.map((issue) => `• ${issue.message}`).join("\n")}\n\n` +
+                      t("validation.confirmOverride"),
+                    );
+                    if (!confirmed) return;
+                    await saveRelationships(true);
                   }
                   setLinkMode(null);
                   await fetchGraph();
@@ -541,7 +626,10 @@ export default function ExplorePage() {
                   toast.success(t("toast.relationshipCreated"));
                 } catch (err) {
                   console.error("Link failed:", err);
-                  toast.error(t("toast.relationshipCreateFailed"));
+                  const issues = getValidationIssues(err);
+                  toast.error(t("toast.relationshipCreateFailed"), {
+                    message: issues?.map((issue) => issue.message).join(" "),
+                  });
                 } finally {
                   setSubmitting(false);
                 }

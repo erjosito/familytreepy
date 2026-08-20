@@ -123,6 +123,19 @@ Default and invalid values are omitted when the URL is normalized. Browser
 Back and Forward restore graph navigation without affecting the separate story
 and person profile routes.
 
+## Data validation
+
+Person and relationship writes protect the tree from self-links, duplicate
+relationships, and parent/child cycles. Dates accept `YYYY`, `YYYY-MM`,
+`YYYY-MM-DD`, or `DD/MM/YYYY`.
+
+Impossible graph structures and malformed dates are rejected. Potentially
+valid historical anomalies—such as an unusual parent age, birth after death,
+or a relationship event outside a recorded lifetime—are returned as warnings
+that the user must explicitly review and override. Creating a person together
+with their initial relationships is transactional, so a warning or error does
+not leave a partial record behind.
+
 ## CLI Tool
 
 A command-line interface for managing the tree directly:

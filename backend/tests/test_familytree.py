@@ -7,6 +7,7 @@ import pytest
 
 from familytree import FamilyTree
 from backend.app.schemas.relationship_schema import load_relationship_schema
+from tree_validation import TreeValidationError
 
 
 @pytest.fixture()
@@ -43,6 +44,30 @@ class TestAddPerson:
         assert person["lastname"] == "White"
         assert person["birthdate"] == "1990-05-10"
 
+    def test_invalid_date_is_rejected(self, tree):
+        with pytest.raises(TreeValidationError) as exc:
+            tree.add_person(firstname="Invalid", birthdate="31/02/2000")
+        assert exc.value.issues[0].code == "invalid_date"
+
+    def test_birth_after_death_requires_explicit_override(self, tree):
+        with pytest.raises(TreeValidationError) as exc:
+            tree.add_person(
+                firstname="Historically",
+                birthdate="2000",
+                deathdate="1900",
+                isAlive=False,
+            )
+        assert exc.value.issues[0].severity == "warning"
+
+        person_id = tree.add_person(
+            firstname="Historically",
+            birthdate="2000",
+            deathdate="1900",
+            isAlive=False,
+            override_warnings=True,
+        )
+        assert tree.get_person(person_id)["deathdate"] == "1900"
+
 
 # ------------------------------------------------------------------
 # Adding relationships
@@ -68,6 +93,109 @@ class TestAddRelationship:
         p2 = tree.add_person(firstname="B", lastname="B")
         with pytest.raises(ValueError, match="Invalid relationship type"):
             tree.add_relationship(p1, p2, type="isFriendOf")
+
+    def test_self_relationship_is_rejected(self, tree):
+        person = tree.add_person(firstname="Self")
+        with pytest.raises(TreeValidationError) as exc:
+            tree.add_relationship(person, person, type="isSpouseOf")
+        assert exc.value.issues[0].code == "self_relationship"
+
+    def test_duplicate_relationship_is_rejected(self, tree):
+        p1 = tree.add_person(firstname="A")
+        p2 = tree.add_person(firstname="B")
+        tree.add_relationship(p1, p2, type="isSpouseOf")
+        with pytest.raises(TreeValidationError) as exc:
+            tree.add_relationship(p1, p2, type="isSpouseOf")
+        assert exc.value.issues[0].code == "duplicate_relationship"
+
+    def test_parent_child_cycle_is_rejected(self, tree):
+        grandchild = tree.add_person(firstname="Grandchild")
+        parent = tree.add_person(firstname="Parent")
+        grandparent = tree.add_person(firstname="Grandparent")
+        tree.add_relationship(grandchild, parent, type="isChildOf")
+        tree.add_relationship(parent, grandparent, type="isChildOf")
+
+        with pytest.raises(TreeValidationError) as exc:
+            tree.add_relationship(grandparent, grandchild, type="isChildOf")
+        assert any(issue.code == "parent_child_cycle" for issue in exc.value.issues)
+
+    def test_implausible_parent_age_can_be_overridden(self, tree):
+        child = tree.add_person(firstname="Child", birthdate="2000")
+        parent = tree.add_person(firstname="Parent", birthdate="1995")
+        with pytest.raises(TreeValidationError) as exc:
+            tree.add_relationship(child, parent, type="isChildOf")
+        assert any(issue.code == "parent_too_young" for issue in exc.value.issues)
+
+        tree.add_relationship(
+            child,
+            parent,
+            type="isChildOf",
+            override_warnings=True,
+        )
+        assert tree.graph.has_edge(child, parent)
+
+    def test_relationship_event_outside_lifetime_warns(self, tree):
+        deceased = tree.add_person(
+            firstname="Deceased",
+            birthdate="1900",
+            deathdate="1980",
+            isAlive=False,
+        )
+        spouse = tree.add_person(firstname="Spouse", birthdate="1900")
+        with pytest.raises(TreeValidationError) as exc:
+            tree.add_relationship(
+                deceased,
+                spouse,
+                type="isSpouseOf",
+                start_date="1990",
+            )
+        assert any(issue.code == "event_after_death" for issue in exc.value.issues)
+
+        tree.add_relationship(
+            deceased,
+            spouse,
+            type="isSpouseOf",
+            start_date="1990",
+            override_warnings=True,
+        )
+
+    def test_relationship_end_before_start_warns(self, tree):
+        p1 = tree.add_person(firstname="A")
+        p2 = tree.add_person(firstname="B")
+        tree.add_relationship(p1, p2, type="isSpouseOf", start_date="2000")
+        with pytest.raises(TreeValidationError) as exc:
+            tree.deactivate_relationship(p1, p2, end_date="1990")
+        assert any(
+            issue.code == "relationship_end_before_start"
+            for issue in exc.value.issues
+        )
+        assert tree.graph[p1][p2]["is_active"] is True
+
+
+class TestUpdatePerson:
+    def test_warning_does_not_mutate_without_override(self, tree):
+        person = tree.add_person(
+            firstname="Person",
+            birthdate="1900",
+            deathdate="1980",
+            isAlive=False,
+        )
+        with pytest.raises(TreeValidationError):
+            tree.update_person(person, birthdate="2000")
+        assert tree.get_person(person)["birthdate"] == "1900"
+
+        tree.update_person(person, birthdate="2000", override_warnings=True)
+        assert tree.get_person(person)["birthdate"] == "2000"
+
+    def test_related_chronology_is_rechecked(self, tree):
+        child = tree.add_person(firstname="Child", birthdate="2000")
+        parent = tree.add_person(firstname="Parent", birthdate="1970")
+        tree.add_relationship(child, parent, type="isChildOf")
+
+        with pytest.raises(TreeValidationError) as exc:
+            tree.update_person(parent, birthdate="1995")
+        assert any(issue.code == "parent_too_young" for issue in exc.value.issues)
+        assert tree.get_person(parent)["birthdate"] == "1970"
 
 
 # ------------------------------------------------------------------

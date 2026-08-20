@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { getPerson, listPersons, getStorageConfig, getNotes, addNote, deleteNote, uploadPicture, uploadProfilePic, tagPicture, removePicture, getPeopleInPicture, untagPicture, deactivateRelationship, reactivateRelationship, deleteRelationship, updatePerson, createPerson, createRelationship, deletePerson, type Note } from "@/lib/api";
+import { getPerson, listPersons, getStorageConfig, getNotes, addNote, deleteNote, uploadPicture, uploadProfilePic, tagPicture, removePicture, getPeopleInPicture, untagPicture, deactivateRelationship, reactivateRelationship, deleteRelationship, updatePerson, deletePerson, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
 import type { PersonNode, GraphEdge } from "@/lib/types";
 import { useAdminView } from "@/lib/adminView";
 import { useI18n } from "@/lib/i18n";
 import { formatDate, formatTimestamp } from "@/lib/dateUtils";
 import { useToast } from "@/components/ToastProvider";
+import ValidationMessages from "@/components/ValidationMessages";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TFunc = (key: any) => string;
@@ -380,6 +381,7 @@ function ProfileHeader({
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [removingProfilePic, setRemovingProfilePic] = useState(false);
   const [deletingPerson, setDeletingPerson] = useState(false);
@@ -403,20 +405,35 @@ function ProfileHeader({
       isAlive: !!person.isAlive,
       deathdate: person.deathdate || "",
     });
+    setValidationIssues([]);
     setEditing(true);
   };
 
-  const handleSave = async () => {
+  const updateDraft = (changes: Partial<typeof draft>) => {
+    setValidationIssues([]);
+    setDraft((current) => ({ ...current, ...changes }));
+  };
+
+  const handleSave = async (overrideWarnings = false) => {
     setSaving(true);
     try {
-      await updatePerson(person.id, draft);
+      await updatePerson(person.id, draft, overrideWarnings);
       setEditing(false);
+      setValidationIssues([]);
       onUpdated();
       toast.success(t("toast.personSaved"));
     } catch (err) {
       console.error("Save failed:", err);
+      const issues = getValidationIssues(err);
+      if (issues) {
+        setValidationIssues(issues);
+        return;
+      }
       toast.error(t("toast.personSaveFailed"), {
-        action: { label: t("toast.retry"), onClick: handleSave },
+        action: {
+          label: t("toast.retry"),
+          onClick: () => handleSave(overrideWarnings),
+        },
       });
     } finally {
       setSaving(false);
@@ -518,7 +535,7 @@ function ProfileHeader({
                   <input
                     type="text"
                     value={draft.firstname}
-                    onChange={(e) => setDraft({ ...draft, firstname: e.target.value })}
+                    onChange={(e) => updateDraft({ firstname: e.target.value })}
                     className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
                   />
                 </div>
@@ -527,7 +544,7 @@ function ProfileHeader({
                   <input
                     type="text"
                     value={draft.lastname}
-                    onChange={(e) => setDraft({ ...draft, lastname: e.target.value })}
+                    onChange={(e) => updateDraft({ lastname: e.target.value })}
                     className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
                   />
                 </div>
@@ -537,7 +554,7 @@ function ProfileHeader({
                 <input
                   type="text"
                   value={draft.alias}
-                  onChange={(e) => setDraft({ ...draft, alias: e.target.value })}
+                  onChange={(e) => updateDraft({ alias: e.target.value })}
                   className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
                 />
               </div>
@@ -547,7 +564,7 @@ function ProfileHeader({
                   <input
                     type="text"
                     value={draft.birthdate}
-                    onChange={(e) => setDraft({ ...draft, birthdate: e.target.value })}
+                    onChange={(e) => updateDraft({ birthdate: e.target.value })}
                     placeholder="dd/mm/yyyy"
                     className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
                   />
@@ -557,7 +574,7 @@ function ProfileHeader({
                   <input
                     type="text"
                     value={draft.birthplace}
-                    onChange={(e) => setDraft({ ...draft, birthplace: e.target.value })}
+                    onChange={(e) => updateDraft({ birthplace: e.target.value })}
                     className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
                   />
                 </div>
@@ -567,7 +584,7 @@ function ProfileHeader({
                   <input
                     type="checkbox"
                     checked={draft.isAlive}
-                    onChange={(e) => setDraft({ ...draft, isAlive: e.target.checked })}
+                    onChange={(e) => updateDraft({ isAlive: e.target.checked })}
                     className="rounded"
                   />
                   {t("field.alive")}
@@ -578,23 +595,31 @@ function ProfileHeader({
                     <input
                       type="text"
                       value={draft.deathdate}
-                      onChange={(e) => setDraft({ ...draft, deathdate: e.target.value })}
+                      onChange={(e) => updateDraft({ deathdate: e.target.value })}
                       placeholder="dd/mm/yyyy"
                       className="border rounded px-3 py-1.5 text-sm text-gray-900"
                     />
                   </div>
                 )}
               </div>
+              <ValidationMessages
+                issues={validationIssues}
+                submitting={saving}
+                onOverride={() => handleSave(true)}
+              />
               <div className="flex gap-2 pt-1">
                 <button
-                  onClick={handleSave}
+                  onClick={() => void handleSave()}
                   disabled={saving}
                   className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
                 >
                   {saving ? t("detail.saving") : t("detail.save")}
                 </button>
                 <button
-                  onClick={() => setEditing(false)}
+                  onClick={() => {
+                    setValidationIssues([]);
+                    setEditing(false);
+                  }}
                   className="px-4 py-1.5 border text-sm rounded hover:bg-gray-50"
                 >
                   {t("form.cancel")}

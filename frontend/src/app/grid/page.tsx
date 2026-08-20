@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { listPersons, getPerson, updatePerson, deletePerson } from "@/lib/api";
+import { listPersons, getPerson, updatePerson, deletePerson, getValidationIssues, type ValidationIssue } from "@/lib/api";
 import { useAdminView } from "@/lib/adminView";
 import { useI18n } from "@/lib/i18n";
 import { formatDate } from "@/lib/dateUtils";
 import Link from "next/link";
 import { useToast } from "@/components/ToastProvider";
+import ValidationMessages from "@/components/ValidationMessages";
 
 interface PersonRow {
   id: string;
@@ -30,6 +31,7 @@ export default function GridPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<PersonRow>>({});
   const [saving, setSaving] = useState(false);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof PersonRow>("lastname");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -78,14 +80,21 @@ export default function GridPage() {
   const startEdit = (p: PersonRow) => {
     setEditingId(p.id);
     setDraft({ ...p });
+    setValidationIssues([]);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setDraft({});
+    setValidationIssues([]);
   };
 
-  const saveEdit = async () => {
+  const updateDraft = (changes: Partial<PersonRow>) => {
+    setValidationIssues([]);
+    setDraft((current) => ({ ...current, ...changes }));
+  };
+
+  const saveEdit = async (overrideWarnings = false) => {
     if (!editingId || !draft) return;
     setSaving(true);
     try {
@@ -98,14 +107,23 @@ export default function GridPage() {
         isAlive: draft.isAlive,
         deathdate: draft.isAlive ? "" : draft.deathdate,
         gender: draft.gender,
-      });
+      }, overrideWarnings);
       setEditingId(null);
+      setValidationIssues([]);
       await fetchAll();
       toast.success(t("toast.personSaved"));
     } catch (err) {
       console.error("Save failed:", err);
+      const issues = getValidationIssues(err);
+      if (issues) {
+        setValidationIssues(issues);
+        return;
+      }
       toast.error(t("toast.personSaveFailed"), {
-        action: { label: t("toast.retry"), onClick: saveEdit },
+        action: {
+          label: t("toast.retry"),
+          onClick: () => saveEdit(overrideWarnings),
+        },
       });
     } finally {
       setSaving(false);
@@ -183,6 +201,14 @@ export default function GridPage() {
             {t("toolbar.loading")}
           </div>
         ) : (
+          <>
+          {editingId && (
+            <ValidationMessages
+              issues={validationIssues}
+              submitting={saving}
+              onOverride={() => saveEdit(true)}
+            />
+          )}
           <div className="bg-white rounded-lg border shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
@@ -209,28 +235,28 @@ export default function GridPage() {
                         <td className="px-3 py-1.5">
                           <input
                             type="text" value={draft.firstname || ""}
-                            onChange={(e) => setDraft({ ...draft, firstname: e.target.value })}
+                            onChange={(e) => updateDraft({ firstname: e.target.value })}
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
                           />
                         </td>
                         <td className="px-3 py-1.5">
                           <input
                             type="text" value={draft.lastname || ""}
-                            onChange={(e) => setDraft({ ...draft, lastname: e.target.value })}
+                            onChange={(e) => updateDraft({ lastname: e.target.value })}
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
                           />
                         </td>
                         <td className="px-3 py-1.5">
                           <input
                             type="text" value={draft.alias || ""}
-                            onChange={(e) => setDraft({ ...draft, alias: e.target.value })}
+                            onChange={(e) => updateDraft({ alias: e.target.value })}
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
                           />
                         </td>
                         <td className="px-3 py-1.5">
                           <select
                             value={draft.gender || ""}
-                            onChange={(e) => setDraft({ ...draft, gender: e.target.value })}
+                            onChange={(e) => updateDraft({ gender: e.target.value })}
                             className="w-full border rounded px-1 py-1 text-sm text-gray-900"
                           >
                             <option value="">—</option>
@@ -241,7 +267,7 @@ export default function GridPage() {
                         <td className="px-3 py-1.5">
                           <input
                             type="text" value={draft.birthdate ?? ""}
-                            onChange={(e) => setDraft({ ...draft, birthdate: e.target.value })}
+                            onChange={(e) => updateDraft({ birthdate: e.target.value })}
                             placeholder="YYYY-MM-DD"
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
                           />
@@ -249,14 +275,14 @@ export default function GridPage() {
                         <td className="px-3 py-1.5">
                           <input
                             type="text" value={draft.birthplace ?? ""}
-                            onChange={(e) => setDraft({ ...draft, birthplace: e.target.value })}
+                            onChange={(e) => updateDraft({ birthplace: e.target.value })}
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
                           />
                         </td>
                         <td className="px-3 py-1.5 text-center">
                           <input
                             type="checkbox" checked={draft.isAlive ?? true}
-                            onChange={(e) => setDraft({ ...draft, isAlive: e.target.checked })}
+                            onChange={(e) => updateDraft({ isAlive: e.target.checked })}
                             className="rounded"
                           />
                         </td>
@@ -264,7 +290,7 @@ export default function GridPage() {
                           {!draft.isAlive && (
                             <input
                               type="text" value={draft.deathdate ?? ""}
-                              onChange={(e) => setDraft({ ...draft, deathdate: e.target.value })}
+                              onChange={(e) => updateDraft({ deathdate: e.target.value })}
                               placeholder="YYYY-MM-DD"
                               className="w-full border rounded px-2 py-1 text-sm text-gray-900"
                             />
@@ -272,7 +298,7 @@ export default function GridPage() {
                         </td>
                         <td className="px-3 py-1.5 text-right">
                           <button
-                            onClick={saveEdit} disabled={saving}
+                            onClick={() => void saveEdit()} disabled={saving}
                             className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 mr-1"
                           >
                             {saving ? "..." : t("admin.save")}
@@ -349,6 +375,7 @@ export default function GridPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>
