@@ -46,7 +46,8 @@ const translations = {
     "actions.close": "Close actions",
 
     // Layout modes
-    "layout.hierarchical": "Hierarchical",
+    "layout.family": "Family tree",
+    "layout.legacyHierarchical": "Hierarchical (legacy)",
     "layout.radial": "Radial",
     "layout.forceDirected": "Force-directed",
     "layout.grid": "Grid",
@@ -354,7 +355,8 @@ const translations = {
     "actions.close": "Cerrar acciones",
 
     // Layout modes
-    "layout.hierarchical": "Jerárquico",
+    "layout.family": "Árbol familiar",
+    "layout.legacyHierarchical": "Jerárquico (anterior)",
     "layout.radial": "Radial",
     "layout.forceDirected": "Dirigido por fuerza",
     "layout.grid": "Cuadrícula",

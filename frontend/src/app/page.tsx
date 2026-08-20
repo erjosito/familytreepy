@@ -50,7 +50,7 @@ export default function ExplorePage() {
   const [otherParentId, setOtherParentId] = useState<string>("");
   const [linkMode, setLinkMode] = useState<{ type: "link_child" | "link_spouse" | "link_parent"; nodeId: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("breadthfirst");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("family");
   const [sasToken, setSasToken] = useState("");
   const [devMode, setDevMode] = useState(false);
   const [nodeFocus, setNodeFocus] = useState({ id: "", request: 0 });
@@ -84,7 +84,7 @@ export default function ExplorePage() {
     fetchGraph();
   }, [fetchGraph]);
 
-  const handleNodeClick = async (nodeId: string) => {
+  const handleNodeClick = useCallback(async (nodeId: string) => {
     setContextMenu(null);
     try {
       const detail = await getPerson(nodeId);
@@ -94,11 +94,15 @@ export default function ExplorePage() {
     } catch (err) {
       console.error("Failed to load person:", err);
     }
-  };
+  }, []);
 
-  const handleContextMenu = (nodeId: string, x: number, y: number) => {
+  const handleContextMenu = useCallback((nodeId: string, x: number, y: number) => {
     setContextMenu({ nodeId, x, y });
-  };
+  }, []);
+
+  const handleNodeDblClick = useCallback((nodeId: string) => {
+    setRootId(nodeId);
+  }, []);
 
   const handleContextAction = async (action: string) => {
     const nodeId = contextMenu?.nodeId;
@@ -284,7 +288,7 @@ export default function ExplorePage() {
             layout={layoutMode}
             sasToken={sasToken}
             onNodeClick={handleNodeClick}
-            onNodeDblClick={(nodeId) => setRootId(nodeId)}
+            onNodeDblClick={handleNodeDblClick}
             onContextMenu={handleContextMenu}
             onNodeLongPress={setActionSheetNodeId}
             relationshipColors={EDGE_COLORS}
