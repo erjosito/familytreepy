@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from backend.app.models import RelationshipCreate, RelationshipDeactivate
 from backend.app.dependencies import get_tree
 from backend.app.auth import require_auth
+from tree_validation import TreeValidationError
 
 router = APIRouter(prefix="/api/relationships", tags=["relationships"], dependencies=[Depends(require_auth)])
 
@@ -19,10 +20,16 @@ def create_relationship(body: RelationshipCreate, tree=Depends(get_tree)):
     """Add a new relationship between two persons."""
     try:
         tree.add_relationship(
-            body.source, body.target, type=body.type, start_date=body.start_date
+            body.source,
+            body.target,
+            type=body.type,
+            start_date=body.start_date,
+            override_warnings=body.override_warnings,
         )
+    except TreeValidationError as e:
+        raise HTTPException(status_code=422, detail=e.to_detail()) from e
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {"source": body.source, "target": body.target, "type": body.type, "created": True}
 
 
@@ -32,9 +39,16 @@ def deactivate_relationship(
 ):
     """Soft-delete a deactivatable relationship."""
     try:
-        tree.deactivate_relationship(source_id, target_id, end_date=body.end_date)
+        tree.deactivate_relationship(
+            source_id,
+            target_id,
+            end_date=body.end_date,
+            override_warnings=body.override_warnings,
+        )
+    except TreeValidationError as e:
+        raise HTTPException(status_code=422, detail=e.to_detail()) from e
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {"source": source_id, "target": target_id, "deactivated": True}
 
 

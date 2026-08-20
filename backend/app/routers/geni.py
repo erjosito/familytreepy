@@ -398,7 +398,7 @@ def _import_profile(tree, data: dict, geni_id: str) -> str:
     else:
         attrs["isAlive"] = bool(is_alive)
 
-    return tree.add_person(**attrs)
+    return tree.add_person(override_warnings=True, **attrs)
 
 
 def _import_family(tree, family_data: dict, focus_person_id: str, focus_geni_id: str) -> list[str]:
@@ -413,7 +413,12 @@ def _import_family(tree, family_data: dict, focus_person_id: str, focus_geni_id:
         pid = _import_profile(tree, node_data, geni_id)
         imported.append(pid)
         try:
-            tree.add_relationship(focus_person_id, pid, "isChildOf")
+            tree.add_relationship(
+                focus_person_id,
+                pid,
+                "isChildOf",
+                override_warnings=True,
+            )
         except (ValueError, Exception) as e:
             logger.warning("Could not add parent relationship: %s", e)
 
@@ -423,7 +428,12 @@ def _import_family(tree, family_data: dict, focus_person_id: str, focus_geni_id:
         pid = _import_profile(tree, node_data, geni_id)
         imported.append(pid)
         try:
-            tree.add_relationship(focus_person_id, pid, "isSpouseOf")
+            tree.add_relationship(
+                focus_person_id,
+                pid,
+                "isSpouseOf",
+                override_warnings=True,
+            )
         except (ValueError, Exception) as e:
             logger.warning("Could not add spouse relationship: %s", e)
 
@@ -433,7 +443,12 @@ def _import_family(tree, family_data: dict, focus_person_id: str, focus_geni_id:
         pid = _import_profile(tree, node_data, geni_id)
         imported.append(pid)
         try:
-            tree.add_relationship(pid, focus_person_id, "isChildOf")
+            tree.add_relationship(
+                pid,
+                focus_person_id,
+                "isChildOf",
+                override_warnings=True,
+            )
         except (ValueError, Exception) as e:
             logger.warning("Could not add child relationship: %s", e)
 

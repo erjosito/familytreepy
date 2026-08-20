@@ -1,7 +1,14 @@
 """Pydantic models for API requests and responses."""
 
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel
+
+
+class PersonRelationshipCreate(BaseModel):
+    related_person_id: str
+    type: str
+    new_person_role: Literal["source", "target"]
+    start_date: str | None = None
 
 
 class PersonCreate(BaseModel):
@@ -15,6 +22,8 @@ class PersonCreate(BaseModel):
     alias: str | None = None
     profilepic: str | None = None
     pictures: list[str] | None = None
+    relationships: list[PersonRelationshipCreate] | None = None
+    override_warnings: bool = False
     extra: dict[str, Any] | None = None
 
 
@@ -29,6 +38,7 @@ class PersonUpdate(BaseModel):
     alias: str | None = None
     profilepic: str | None = None
     pictures: list[str] | None = None
+    override_warnings: bool = False
     extra: dict[str, Any] | None = None
 
 
@@ -50,10 +60,12 @@ class RelationshipCreate(BaseModel):
     target: str
     type: str
     start_date: str | None = None
+    override_warnings: bool = False
 
 
 class RelationshipDeactivate(BaseModel):
     end_date: str | None = None
+    override_warnings: bool = False
 
 
 class RelationshipResponse(BaseModel):

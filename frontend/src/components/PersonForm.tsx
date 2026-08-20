@@ -2,15 +2,19 @@
 
 import { useState, useEffect } from "react";
 import { getPersonSchema } from "@/lib/api";
+import type { ValidationIssue } from "@/lib/api";
 import type { FieldConfig } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
+import ValidationMessages from "@/components/ValidationMessages";
 
 interface Props {
   mode: "add" | "edit";
   initialData?: Record<string, unknown>;
   title: string;
   submitting?: boolean;
-  onSubmit: (data: Record<string, unknown>) => void | Promise<void>;
+  validationIssues?: ValidationIssue[];
+  onSubmit: (data: Record<string, unknown>, overrideWarnings?: boolean) => void | Promise<void>;
+  onValidationClear?: () => void;
   onCancel: () => void;
 }
 
@@ -19,7 +23,9 @@ export default function PersonForm({
   initialData = {},
   title,
   submitting = false,
+  validationIssues = [],
   onSubmit,
+  onValidationClear,
   onCancel,
 }: Props) {
   const { t } = useI18n();
@@ -30,12 +36,9 @@ export default function PersonForm({
     getPersonSchema().then((s) => setSchema(s as Record<string, FieldConfig>)).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    setFormData(initialData);
-  }, [initialData]);
-
   const handleChange = (field: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    onValidationClear?.();
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -47,10 +50,15 @@ export default function PersonForm({
     if (!config.visible_when) return true;
     return formData[config.visible_when.field] === config.visible_when.equals;
   };
-
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <h3 className="font-semibold text-lg">{title}</h3>
+
+      <ValidationMessages
+        issues={validationIssues}
+        submitting={submitting}
+        onOverride={() => onSubmit(formData, true)}
+      />
 
       {Object.entries(schema).map(([field, config]) => {
         if (!isVisible(field, config)) return null;
@@ -82,6 +90,18 @@ export default function PersonForm({
                 className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
               />
             )}
+            {validationIssues
+              .filter((issue) => issue.field === field)
+              .map((issue, index) => (
+                <p
+                  key={`${issue.code}-${index}`}
+                  className={`mt-1 text-xs ${
+                    issue.severity === "error" ? "text-red-700" : "text-amber-700"
+                  }`}
+                >
+                  {issue.message}
+                </p>
+              ))}
           </div>
         );
       })}

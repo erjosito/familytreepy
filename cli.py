@@ -140,7 +140,10 @@ def cmd_add(tree: FamilyTree, args: argparse.Namespace) -> None:
     if args.id:
         attrs["id"] = args.id
 
-    pid = tree.add_person(**attrs)
+    pid = tree.add_person(
+        override_warnings=args.override_warnings,
+        **attrs,
+    )
     name = (attrs.get("firstname", "") + " " + attrs.get("lastname", "")).strip()
     print(f"Created: {name or '(no name)'}  (ID: {pid})")
 
@@ -160,7 +163,11 @@ def cmd_edit(tree: FamilyTree, args: argparse.Namespace) -> None:
     if not attrs:
         print("No attributes to update. Use --firstname, --lastname, --birthdate, --birthplace.")
         return
-    tree.update_person(pid, **attrs)
+    tree.update_person(
+        pid,
+        override_warnings=args.override_warnings,
+        **attrs,
+    )
     print(f"Updated: {_fullname(tree, pid)}")
 
 
@@ -182,12 +189,24 @@ def cmd_add_rel(tree: FamilyTree, args: argparse.Namespace) -> None:
     pid1 = _resolve_person(tree, args.person1)
     pid2 = _resolve_person(tree, args.person2)
     rel_type = args.type
-    tree.add_relationship(pid1, pid2, type=rel_type, start_date=args.start_date)
+    tree.add_relationship(
+        pid1,
+        pid2,
+        type=rel_type,
+        start_date=args.start_date,
+        override_warnings=args.override_warnings,
+    )
     print(f"Created: {_fullname(tree, pid1)} --[{rel_type}]--> {_fullname(tree, pid2)}")
 
     # For spouse, also create reverse edge
     if rel_type == "isSpouseOf":
-        tree.add_relationship(pid2, pid1, type=rel_type, start_date=args.start_date)
+        tree.add_relationship(
+            pid2,
+            pid1,
+            type=rel_type,
+            start_date=args.start_date,
+            override_warnings=args.override_warnings,
+        )
         print(f"Created: {_fullname(tree, pid2)} --[{rel_type}]--> {_fullname(tree, pid1)}")
 
 
@@ -195,7 +214,12 @@ def cmd_deactivate_rel(tree: FamilyTree, args: argparse.Namespace) -> None:
     """Deactivate a relationship."""
     pid1 = _resolve_person(tree, args.person1)
     pid2 = _resolve_person(tree, args.person2)
-    tree.deactivate_relationship(pid1, pid2, end_date=args.end_date)
+    tree.deactivate_relationship(
+        pid1,
+        pid2,
+        end_date=args.end_date,
+        override_warnings=args.override_warnings,
+    )
     print(f"Deactivated: {_fullname(tree, pid1)} <-> {_fullname(tree, pid2)}")
 
 
@@ -306,6 +330,7 @@ def main() -> None:
     p.add_argument("--lastname", help="Last name")
     p.add_argument("--birthdate", help="Birth date (e.g. 1990-01-31)")
     p.add_argument("--birthplace", help="Birth place")
+    p.add_argument("--override-warnings", action="store_true", help="Accept chronology warnings")
 
     # edit
     p = sub.add_parser("edit", help="Edit a person's attributes")
@@ -314,6 +339,7 @@ def main() -> None:
     p.add_argument("--lastname", help="Last name")
     p.add_argument("--birthdate", help="Birth date")
     p.add_argument("--birthplace", help="Birth place")
+    p.add_argument("--override-warnings", action="store_true", help="Accept chronology warnings")
 
     # delete
     p = sub.add_parser("delete", help="Delete a person")
@@ -326,12 +352,14 @@ def main() -> None:
     p.add_argument("person2", help="Target person name or ID")
     p.add_argument("type", choices=["isChildOf", "isSpouseOf"], help="Relationship type")
     p.add_argument("--start-date", help="Start date")
+    p.add_argument("--override-warnings", action="store_true", help="Accept chronology warnings")
 
     # deactivate-rel
     p = sub.add_parser("deactivate-rel", help="Deactivate a relationship")
     p.add_argument("person1", help="Person 1 name or ID")
     p.add_argument("person2", help="Person 2 name or ID")
     p.add_argument("--end-date", help="End date")
+    p.add_argument("--override-warnings", action="store_true", help="Accept chronology warnings")
 
     # reactivate-rel
     p = sub.add_parser("reactivate-rel", help="Reactivate a relationship")

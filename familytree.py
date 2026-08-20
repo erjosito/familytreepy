@@ -5,6 +5,12 @@ import json
 import tempfile
 from gremlin_python.driver import client, serializer
 from azure.storage.blob import BlobServiceClient
+from tree_validation import (
+    enforce_issues,
+    validate_person_dates,
+    validate_person_relationships,
+    validate_relationship,
+)
 
 
 class FamilyTree:
@@ -224,7 +230,11 @@ class FamilyTree:
                     # Add the picture info if the option 'import_pics' is enabled
                     if import_pics and 'profilePhoto' in node_info:
                         new_node_attributes['pictures'] = [ f"https://{azure_storage_account}.blob.core.windows.net/{azure_storage_container}/{node_info['profilePhoto']}" ]
-                    self.add_person(id=node_id, **new_node_attributes)
+                    self.add_person(
+                        id=node_id,
+                        override_warnings=True,
+                        **new_node_attributes,
+                    )
                 else:
                     raise ValueError(f"Node {node_id} is missing 'infoId' attribute")
                 node_count += 1
@@ -235,12 +245,32 @@ class FamilyTree:
                         target_id = relation.get('to')
                         if target_id in self.graph and node_id in self.graph:
                             if relation.get('type') == 'parent':
-                                self.add_relationship(node_id, target_id, type='isChildOf')
+                                self.add_relationship(
+                                    node_id,
+                                    target_id,
+                                    type='isChildOf',
+                                    override_warnings=True,
+                                )
                             elif relation.get('type') == 'child':
-                                self.add_relationship(target_id, node_id, type='isChildOf')
+                                self.add_relationship(
+                                    target_id,
+                                    node_id,
+                                    type='isChildOf',
+                                    override_warnings=True,
+                                )
                             elif relation.get('type') == 'spouse':
-                                self.add_relationship(node_id, target_id, type='isSpouseOf')
-                                self.add_relationship(target_id, node_id, type='isSpouseOf')
+                                self.add_relationship(
+                                    node_id,
+                                    target_id,
+                                    type='isSpouseOf',
+                                    override_warnings=True,
+                                )
+                                self.add_relationship(
+                                    target_id,
+                                    node_id,
+                                    type='isSpouseOf',
+                                    override_warnings=True,
+                                )
                             else:
                                 raise ValueError(f"Invalid relationship type {relation.get('type')} for nodes {node_id} and {target_id}")
                         else:
@@ -256,7 +286,11 @@ class FamilyTree:
     ###############
     #     Add     #
     ###############
-    def add_person(self, id=None, **attributes):
+    def add_person(self, id=None, override_warnings=False, **attributes):
+        enforce_issues(
+            validate_person_dates(attributes, str(id or "")),
+            override_warnings=override_warnings,
+        )
         if id is not None:
             person_id = id  # Not enforcing that ID is a valid UUID
         else:
@@ -272,7 +306,15 @@ class FamilyTree:
             self.cosmosdb_client.submit(gremlin_query).all().result()
         return person_id
     # Relationships can be of types defined in the relationship schema (defaults to isChildOf, isSpouseOf)
-    def add_relationship(self, person1_id, person2_id, type, start_date=None, **extra_attrs):
+    def add_relationship(
+        self,
+        person1_id,
+        person2_id,
+        type,
+        start_date=None,
+        override_warnings=False,
+        **extra_attrs,
+    ):
         if person1_id not in self.graph or person2_id not in self.graph:
             raise ValueError("Both persons must be in the family tree")
         if self.relationship_schema:
@@ -282,6 +324,17 @@ class FamilyTree:
         else:
             if type not in ['isChildOf', 'isSpouseOf']:
                 raise ValueError("Invalid relationship type " + type + ". Valid relationship types are: isChildOf, isSpouseOf")
+        enforce_issues(
+            validate_relationship(
+                self.graph,
+                person1_id,
+                person2_id,
+                type,
+                start_date=start_date,
+                end_date=extra_attrs.get("end_date"),
+            ),
+            override_warnings=override_warnings,
+        )
         edge_attrs = {'type': type, **extra_attrs}
         # Add soft-delete fields for non-permanent relationship types
         is_permanent = True
@@ -326,9 +379,27 @@ class FamilyTree:
     ###############
     #   Update    #
     ###############
-    def update_person(self, person_id, **attributes):
+    def update_person(
+        self,
+        person_id,
+        clear_fields=None,
+        override_warnings=False,
+        **attributes,
+    ):
         if person_id not in self.graph:
             raise ValueError("Person must be in the family tree")
+        clear_fields = set(clear_fields or [])
+        prospective = dict(self.graph.nodes[person_id])
+        for key in clear_fields:
+            prospective.pop(key, None)
+        prospective.update(attributes)
+        if {"birthdate", "deathdate", "isAlive"} & (set(attributes) | clear_fields):
+            enforce_issues(
+                validate_person_relationships(self.graph, person_id, prospective),
+                override_warnings=override_warnings,
+            )
+        for key in clear_fields:
+            self.graph.nodes[person_id].pop(key, None)
         for key, value in attributes.items():
             self.graph.nodes[person_id][key] = value
         if self.autosave:
@@ -450,12 +521,31 @@ class FamilyTree:
     #####################
     #   Relationships   #
     #####################
-    def deactivate_relationship(self, person1_id, person2_id, end_date=None):
+    def deactivate_relationship(
+        self,
+        person1_id,
+        person2_id,
+        end_date=None,
+        override_warnings=False,
+    ):
         """Soft-delete a deactivatable relationship by setting is_active=False and end_date."""
         if not self.graph.has_edge(person1_id, person2_id):
             raise ValueError(f"No relationship exists between {person1_id} and {person2_id}")
         edge = self.graph[person1_id][person2_id]
         rel_type = edge.get('type', '')
+        if end_date:
+            enforce_issues(
+                validate_relationship(
+                    self.graph,
+                    person1_id,
+                    person2_id,
+                    rel_type,
+                    start_date=edge.get('start_date'),
+                    end_date=end_date,
+                    check_structure=False,
+                ),
+                override_warnings=override_warnings,
+            )
         is_permanent = True
         if self.relationship_schema:
             is_permanent = self.relationship_schema.is_permanent(rel_type)

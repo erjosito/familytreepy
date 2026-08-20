@@ -327,14 +327,34 @@ def cmd_import(args: argparse.Namespace) -> None:
             # Create relationship
             try:
                 if rel == "child":
-                    tree.add_relationship(person_id, fam_pid, type="isChildOf")
+                    tree.add_relationship(
+                        person_id,
+                        fam_pid,
+                        type="isChildOf",
+                        override_warnings=True,
+                    )
                     print(f"    → Parent: {fam_name}")
                 elif rel == "partner":
-                    tree.add_relationship(person_id, fam_pid, type="isSpouseOf")
-                    tree.add_relationship(fam_pid, person_id, type="isSpouseOf")
+                    tree.add_relationship(
+                        person_id,
+                        fam_pid,
+                        type="isSpouseOf",
+                        override_warnings=True,
+                    )
+                    tree.add_relationship(
+                        fam_pid,
+                        person_id,
+                        type="isSpouseOf",
+                        override_warnings=True,
+                    )
                     print(f"    → Spouse: {fam_name}")
                 elif rel == "parent":
-                    tree.add_relationship(fam_pid, person_id, type="isChildOf")
+                    tree.add_relationship(
+                        fam_pid,
+                        person_id,
+                        type="isChildOf",
+                        override_warnings=True,
+                    )
                     print(f"    → Child: {fam_name}")
             except Exception as e:
                 print(f"    ⚠ Relationship error: {e}")
@@ -361,7 +381,7 @@ def _import_single(tree: FamilyTree, data: dict, geni_id: str) -> str:
         attrs["isAlive"] = False
     else:
         attrs["isAlive"] = True
-    return tree.add_person(**attrs)
+    return tree.add_person(override_warnings=True, **attrs)
 
 
 def cmd_lookup(args: argparse.Namespace) -> None:

@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { PersonNode, GraphEdge } from "@/lib/types";
-import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, deleteRelationship, getNotes, addNote, deleteNote, type Note } from "@/lib/api";
+import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, deleteRelationship, getNotes, addNote, deleteNote, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
 import { formatDate, formatTimestamp } from "@/lib/dateUtils";
 import { useToast } from "@/components/ToastProvider";
 import type { PersonActionDefinition } from "@/lib/personActions";
+import ValidationMessages from "@/components/ValidationMessages";
 
 interface Props {
   person: PersonNode | null;
@@ -45,6 +46,7 @@ export default function DetailPanel({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [removingProfilePic, setRemovingProfilePic] = useState(false);
 
@@ -53,6 +55,7 @@ export default function DetailPanel({
   useEffect(() => {
     setEditing(false);
     setDraft({});
+    setValidationIssues([]);
     setCropSrc(null);
   }, [personId]);
 
@@ -81,26 +84,37 @@ export default function DetailPanel({
       isAlive: !!person.isAlive,
       deathdate: person.deathdate || "",
     });
+    setValidationIssues([]);
     setEditing(true);
   };
 
   const cancelEdit = () => {
     setEditing(false);
+    setValidationIssues([]);
     setCropSrc(null);
   };
 
-  const saveEdit = async () => {
+  const saveEdit = async (overrideWarnings = false) => {
     if (saving) return;
     setSaving(true);
     try {
-      await updatePerson(person.id, draft);
+      await updatePerson(person.id, draft, overrideWarnings);
       setEditing(false);
+      setValidationIssues([]);
       onPersonUpdated?.();
       toast.success(t("toast.personSaved"));
     } catch (err) {
       console.error("Save failed:", err);
+      const issues = getValidationIssues(err);
+      if (issues) {
+        setValidationIssues(issues);
+        return;
+      }
       toast.error(t("toast.personSaveFailed"), {
-        action: { label: t("toast.retry"), onClick: saveEdit },
+        action: {
+          label: t("toast.retry"),
+          onClick: () => saveEdit(overrideWarnings),
+        },
       });
     } finally {
       setSaving(false);
@@ -125,6 +139,7 @@ export default function DetailPanel({
   };
 
   const clearField = (field: string) => {
+    setValidationIssues([]);
     setDraft((d) => ({ ...d, [field]: "" }));
   };
 
@@ -232,28 +247,42 @@ export default function DetailPanel({
 
       {/* Fields */}
       {editing ? (
-        <EditFields draft={draft} setDraft={setDraft} onClear={clearField} />
+        <EditFields
+          draft={draft}
+          setDraft={(next) => {
+            setValidationIssues([]);
+            setDraft(next);
+          }}
+          onClear={clearField}
+        />
       ) : (
         <ViewFields person={person} />
       )}
 
       {/* Save / Cancel */}
       {editing && (
-        <div className="flex gap-2 pt-1">
-          <button
-            onClick={saveEdit}
-            disabled={saving}
-            className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? t("detail.saving") : t("detail.save")}
-          </button>
-          <button
-            onClick={cancelEdit}
-            className="px-4 py-1.5 border text-sm rounded hover:bg-gray-50"
-          >
-            {t("detail.cancel")}
-          </button>
-        </div>
+        <>
+          <ValidationMessages
+            issues={validationIssues}
+            submitting={saving}
+            onOverride={() => saveEdit(true)}
+          />
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => void saveEdit()}
+              disabled={saving}
+              className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? t("detail.saving") : t("detail.save")}
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="px-4 py-1.5 border text-sm rounded hover:bg-gray-50"
+            >
+              {t("detail.cancel")}
+            </button>
+          </div>
+        </>
       )}
 
       {/* Relationships */}

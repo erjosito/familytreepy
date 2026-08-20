@@ -6,6 +6,12 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from backend.app.models import PersonCreate, PersonUpdate, PersonResponse
 from backend.app.dependencies import get_tree
 from backend.app.auth import require_auth
+from tree_validation import (
+    TreeValidationError,
+    enforce_issues,
+    validate_person_dates,
+    validate_relationship,
+)
 
 router = APIRouter(prefix="/api/persons", tags=["persons"], dependencies=[Depends(require_auth)])
 
@@ -58,10 +64,84 @@ def get_person(person_id: str, tree=Depends(get_tree)):
 @router.post("", response_model=dict, status_code=201)
 def create_person(body: PersonCreate, tree=Depends(get_tree)):
     """Add a new person."""
-    attrs = body.model_dump(exclude_none=True, exclude={"extra"})
+    attrs = body.model_dump(
+        exclude_none=True,
+        exclude={"extra", "relationships", "override_warnings"},
+    )
     if body.extra:
-        attrs.update(body.extra)
-    person_id = tree.add_person(**attrs)
+        attrs.update(
+            {
+                key: value
+                for key, value in body.extra.items()
+                if key not in {"override_warnings", "relationships"}
+            }
+        )
+    previous_autosave = tree.autosave
+    person_id = str(uuid.uuid4())
+    while person_id in tree.graph:
+        person_id = str(uuid.uuid4())
+    person_added = False
+    try:
+        staged_graph = tree.graph.copy()
+        staged_graph.add_node(person_id, **attrs)
+        issues = validate_person_dates(attrs, person_id)
+        staged_relationships = []
+        for relationship in body.relationships or []:
+            if relationship.new_person_role == "source":
+                source, target = person_id, relationship.related_person_id
+            else:
+                source, target = relationship.related_person_id, person_id
+            relationship_issues = validate_relationship(
+                staged_graph,
+                source,
+                target,
+                relationship.type,
+                start_date=relationship.start_date,
+            )
+            issues.extend(relationship_issues)
+            if not any(issue.severity == "error" for issue in relationship_issues):
+                staged_graph.add_edge(
+                    source,
+                    target,
+                    type=relationship.type,
+                    start_date=relationship.start_date,
+                )
+            staged_relationships.append(
+                (source, target, relationship.type, relationship.start_date)
+            )
+        enforce_issues(issues, override_warnings=body.override_warnings)
+
+        tree.autosave = False
+        tree.add_person(
+            id=person_id,
+            override_warnings=True,
+            **attrs,
+        )
+        person_added = True
+        for source, target, relationship_type, start_date in staged_relationships:
+            tree.add_relationship(
+                source,
+                target,
+                type=relationship_type,
+                start_date=start_date,
+                override_warnings=True,
+            )
+        if previous_autosave:
+            tree.save()
+    except TreeValidationError as exc:
+        if person_added and person_id in tree.graph:
+            tree.graph.remove_node(person_id)
+        raise HTTPException(status_code=422, detail=exc.to_detail()) from exc
+    except ValueError as exc:
+        if person_added and person_id in tree.graph:
+            tree.graph.remove_node(person_id)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        if person_added and person_id in tree.graph:
+            tree.graph.remove_node(person_id)
+        raise
+    finally:
+        tree.autosave = previous_autosave
     return {"id": person_id}
 
 
@@ -70,15 +150,30 @@ def update_person(person_id: str, body: PersonUpdate, tree=Depends(get_tree)):
     """Update person attributes. Send empty string to clear a field."""
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
-    attrs = body.model_dump(exclude_none=True, exclude={"extra"})
+    attrs = body.model_dump(
+        exclude_none=True,
+        exclude={"extra", "override_warnings"},
+    )
     if body.extra:
-        attrs.update(body.extra)
+        attrs.update(
+            {
+                key: value
+                for key, value in body.extra.items()
+                if key not in {"clear_fields", "override_warnings"}
+            }
+        )
     # Handle field clearing: empty string means delete the attribute
-    for key, value in list(attrs.items()):
-        if value == "" and key in tree.graph.nodes[person_id]:
-            del tree.graph.nodes[person_id][key]
-            del attrs[key]
-    tree.update_person(person_id, **attrs)
+    clear_fields = {key for key, value in attrs.items() if value == ""}
+    attrs = {key: value for key, value in attrs.items() if key not in clear_fields}
+    try:
+        tree.update_person(
+            person_id,
+            clear_fields=clear_fields,
+            override_warnings=body.override_warnings,
+            **attrs,
+        )
+    except TreeValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.to_detail()) from exc
     return {"id": person_id, "updated": True}
 
 
