@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import GraphViewer, { LAYOUT_OPTIONS, type LayoutMode } from "@/components/GraphViewer";
 import DetailPanel from "@/components/DetailPanel";
 import ContextMenu from "@/components/ContextMenu";
@@ -13,6 +13,12 @@ import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
 import { useToast } from "@/components/ToastProvider";
 import { getPersonActions } from "@/lib/personActions";
+import {
+  DEFAULT_GRAPH_VIEW_STATE,
+  parseGraphViewState,
+  serializeGraphViewState,
+  type GraphViewState,
+} from "@/lib/graphViewState";
 
 /** Strip non-primitive values (e.g. GML graphics objects) so React won't
  *  choke when rendering person fields. */
@@ -32,6 +38,12 @@ const EDGE_COLORS: Record<string, string> = {
   isSpouseOf: "#3b82f6",
 };
 
+type HistoryMode = "none" | "push" | "replace";
+
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("404:");
+}
+
 export default function ExplorePage() {
   const { t } = useI18n();
   const toast = useToast();
@@ -40,6 +52,7 @@ export default function ExplorePage() {
   const [personList, setPersonList] = useState<SearchablePerson[]>([]);
   const [rootId, setRootId] = useState<string>("");
   const [degree, setDegree] = useState(2);
+  const [selectedId, setSelectedId] = useState("");
   const [selectedPerson, setSelectedPerson] = useState<PersonNode | null>(null);
   const [selectedRelationships, setSelectedRelationships] = useState<GraphEdge[]>([]);
   const [selectedSiblings, setSelectedSiblings] = useState<string[]>([]);
@@ -54,13 +67,65 @@ export default function ExplorePage() {
   const [sasToken, setSasToken] = useState("");
   const [devMode, setDevMode] = useState(false);
   const [nodeFocus, setNodeFocus] = useState({ id: "", request: 0 });
+  const [urlReady, setUrlReady] = useState(false);
+  const historyModeRef = useRef<HistoryMode>("none");
+  const detailRequestRef = useRef(0);
+  const graphViewRef = useRef<GraphViewState>(DEFAULT_GRAPH_VIEW_STATE);
+  graphViewRef.current = {
+    center: rootId,
+    radius: degree,
+    layout: layoutMode,
+    person: selectedId,
+  };
   const showMobilePanel = Boolean(formMode || linkMode || selectedPerson);
   const personActions = getPersonActions(adminView);
+
+  const queueHistory = useCallback((mode: Exclude<HistoryMode, "none">) => {
+    if (mode === "push" || historyModeRef.current === "none") {
+      historyModeRef.current = mode;
+    }
+  }, []);
+
+  const updateRoot = useCallback((nextRootId: string, mode: "push" | "replace") => {
+    if (graphViewRef.current.center === nextRootId) return;
+    queueHistory(mode);
+    graphViewRef.current = { ...graphViewRef.current, center: nextRootId };
+    setRootId(nextRootId);
+  }, [queueHistory]);
+
+  const updateRadius = useCallback((nextRadius: number) => {
+    if (graphViewRef.current.radius === nextRadius) return;
+    queueHistory("replace");
+    graphViewRef.current = { ...graphViewRef.current, radius: nextRadius };
+    setDegree(nextRadius);
+  }, [queueHistory]);
+
+  const updateLayout = useCallback((nextLayout: LayoutMode) => {
+    if (graphViewRef.current.layout === nextLayout) return;
+    queueHistory("replace");
+    graphViewRef.current = { ...graphViewRef.current, layout: nextLayout };
+    setLayoutMode(nextLayout);
+  }, [queueHistory]);
+
+  const updateSelectedId = useCallback((nextSelectedId: string, mode: "push" | "replace") => {
+    if (graphViewRef.current.person === nextSelectedId) return;
+    queueHistory(mode);
+    graphViewRef.current = { ...graphViewRef.current, person: nextSelectedId };
+    setSelectedId(nextSelectedId);
+  }, [queueHistory]);
+
+  const clearPersonDetails = useCallback(() => {
+    detailRequestRef.current += 1;
+    setSelectedPerson(null);
+    setSelectedRelationships([]);
+    setSelectedSiblings([]);
+  }, []);
 
   const closeSidePanel = () => {
     setFormMode(null);
     setLinkMode(null);
-    setSelectedPerson(null);
+    updateSelectedId("", "push");
+    clearPersonDetails();
   };
 
   const fetchGraph = useCallback(async () => {
@@ -70,10 +135,33 @@ export default function ExplorePage() {
       setGraphData(data);
     } catch (err) {
       console.error("Failed to load graph:", err);
+      if (rootId && isNotFoundError(err)) {
+        updateRoot("", "replace");
+      }
     } finally {
       setLoading(false);
     }
-  }, [rootId, degree]);
+  }, [rootId, degree, updateRoot]);
+
+  const loadPersonDetails = useCallback(async (personId: string) => {
+    const request = detailRequestRef.current + 1;
+    detailRequestRef.current = request;
+
+    try {
+      const detail = await getPerson(personId);
+      if (detailRequestRef.current !== request) return;
+      setSelectedPerson(sanitizePerson(detail));
+      setSelectedRelationships((detail.relationships || []) as GraphEdge[]);
+      setSelectedSiblings(Array.isArray(detail.siblings) ? detail.siblings as string[] : []);
+    } catch (err) {
+      if (detailRequestRef.current !== request) return;
+      console.error("Failed to load person:", err);
+      clearPersonDetails();
+      if (isNotFoundError(err) && graphViewRef.current.person === personId) {
+        updateSelectedId("", "replace");
+      }
+    }
+  }, [clearPersonDetails, updateSelectedId]);
 
   useEffect(() => {
     listPersons().then(setPersonList).catch(console.error);
@@ -81,28 +169,92 @@ export default function ExplorePage() {
   }, []);
 
   useEffect(() => {
-    fetchGraph();
-  }, [fetchGraph]);
+    const applyUrlState = () => {
+      const nextState = parseGraphViewState(window.location.search);
+      historyModeRef.current = "none";
+      graphViewRef.current = nextState;
+      setRootId(nextState.center);
+      setDegree(nextState.radius);
+      setLayoutMode(nextState.layout);
+      setSelectedId(nextState.person);
+      setFormMode(null);
+      setLinkMode(null);
+      setContextMenu(null);
+      setActionSheetNodeId(null);
+      clearPersonDetails();
+      if (nextState.person) {
+        setNodeFocus((current) => ({
+          id: nextState.person,
+          request: current.request + 1,
+        }));
+      }
 
-  const handleNodeClick = useCallback(async (nodeId: string) => {
-    setContextMenu(null);
-    try {
-      const detail = await getPerson(nodeId);
-      setSelectedPerson(sanitizePerson(detail));
-      setSelectedRelationships((detail.relationships || []) as GraphEdge[]);
-      setSelectedSiblings(Array.isArray(detail.siblings) ? detail.siblings as string[] : []);
-    } catch (err) {
-      console.error("Failed to load person:", err);
+      const normalizedSearch = serializeGraphViewState(window.location.search, nextState);
+      if (normalizedSearch !== window.location.search) {
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${window.location.pathname}${normalizedSearch}${window.location.hash}`,
+        );
+      }
+    };
+
+    applyUrlState();
+    setUrlReady(true);
+    window.addEventListener("popstate", applyUrlState);
+    return () => window.removeEventListener("popstate", applyUrlState);
+  }, [clearPersonDetails]);
+
+  useEffect(() => {
+    if (!urlReady) return;
+    fetchGraph();
+  }, [fetchGraph, urlReady]);
+
+  useEffect(() => {
+    if (!urlReady) return;
+    if (selectedId) {
+      void loadPersonDetails(selectedId);
+    } else {
+      clearPersonDetails();
     }
-  }, []);
+  }, [clearPersonDetails, loadPersonDetails, selectedId, urlReady]);
+
+  useEffect(() => {
+    if (!urlReady) return;
+
+    const nextSearch = serializeGraphViewState(window.location.search, {
+      center: rootId,
+      radius: degree,
+      layout: layoutMode,
+      person: selectedId,
+    });
+    const mode = historyModeRef.current;
+    historyModeRef.current = "none";
+    if (mode === "none" || nextSearch === window.location.search) return;
+
+    const nextUrl = `${window.location.pathname}${nextSearch}${window.location.hash}`;
+    if (mode === "push") {
+      window.history.pushState(window.history.state, "", nextUrl);
+    } else {
+      window.history.replaceState(window.history.state, "", nextUrl);
+    }
+  }, [degree, layoutMode, rootId, selectedId, urlReady]);
+
+  const handleNodeClick = useCallback((nodeId: string) => {
+    setContextMenu(null);
+    if (graphViewRef.current.person !== nodeId) {
+      clearPersonDetails();
+    }
+    updateSelectedId(nodeId, "push");
+  }, [clearPersonDetails, updateSelectedId]);
 
   const handleContextMenu = useCallback((nodeId: string, x: number, y: number) => {
     setContextMenu({ nodeId, x, y });
   }, []);
 
   const handleNodeDblClick = useCallback((nodeId: string) => {
-    setRootId(nodeId);
-  }, []);
+    updateRoot(nodeId, "push");
+  }, [updateRoot]);
 
   const handleContextAction = async (action: string) => {
     const nodeId = contextMenu?.nodeId;
@@ -119,7 +271,7 @@ export default function ExplorePage() {
 
   const handleAction = async (action: string, nodeId: string) => {
     if (action === "center") {
-      setRootId(nodeId);
+      updateRoot(nodeId, "push");
     } else if (action === "story") {
       window.location.href = `/story/?id=${nodeId}&degree=3`;
     } else if (action === "delete") {
@@ -127,7 +279,13 @@ export default function ExplorePage() {
       setSubmitting(true);
       try {
         await deletePerson(nodeId);
-        setSelectedPerson(null);
+        if (graphViewRef.current.person === nodeId) {
+          updateSelectedId("", "replace");
+          clearPersonDetails();
+        }
+        if (graphViewRef.current.center === nodeId) {
+          updateRoot("", "replace");
+        }
         await fetchGraph();
         listPersons().then(setPersonList).catch(console.error);
         toast.success(t("toast.personDeleted"));
@@ -161,6 +319,7 @@ export default function ExplorePage() {
       } else {
         setFormMode({ type: action as "edit" | "add_spouse" | "add_parent", nodeId });
         if (action === "edit") {
+          updateSelectedId(nodeId, "push");
           const detail = await getPerson(nodeId);
           setSelectedPerson(sanitizePerson(detail));
         }
@@ -216,8 +375,8 @@ export default function ExplorePage() {
           persons={personList}
           onSelect={(person) => {
             setNodeFocus((current) => ({ id: person.id, request: current.request + 1 }));
-            setRootId(person.id);
-            void handleNodeClick(person.id);
+            updateRoot(person.id, "push");
+            handleNodeClick(person.id);
           }}
         />
         <div className="flex min-w-0 items-center gap-2">
@@ -225,7 +384,7 @@ export default function ExplorePage() {
           <select
             className="min-w-0 flex-1 border rounded px-2 py-2 text-sm text-gray-900 md:max-w-[250px] md:py-1"
             value={rootId}
-            onChange={(e) => setRootId(e.target.value)}
+            onChange={(e) => updateRoot(e.target.value, "push")}
           >
             <option value="">{t("toolbar.all")}</option>
             {[...personList].sort((a, b) => a.fullname.localeCompare(b.fullname)).map((p) => (
@@ -243,7 +402,7 @@ export default function ExplorePage() {
             min={1}
             max={10}
             value={degree}
-            onChange={(e) => setDegree(Number(e.target.value))}
+            onChange={(e) => updateRadius(Number(e.target.value))}
             className="min-w-16 flex-1 md:w-24 md:flex-none"
           />
           <span className="w-4 shrink-0 text-sm font-mono">{degree}</span>
@@ -252,7 +411,7 @@ export default function ExplorePage() {
           <select
             className="min-w-0 flex-1 border rounded px-2 py-2 text-sm text-gray-900 md:flex-none md:py-1"
             value={layoutMode}
-            onChange={(e) => setLayoutMode(e.target.value as LayoutMode)}
+            onChange={(e) => updateLayout(e.target.value as LayoutMode)}
           >
             {LAYOUT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -399,12 +558,15 @@ export default function ExplorePage() {
               personList={personList}
               devMode={devMode}
               sasToken={sasToken}
-              onClose={() => setSelectedPerson(null)}
+              onClose={() => {
+                updateSelectedId("", "push");
+                clearPersonDetails();
+              }}
               onPersonUpdated={async () => {
                 await fetchGraph();
                 listPersons().then(setPersonList);
-                if (selectedPerson) {
-                  const detail = await getPerson(selectedPerson.id);
+                if (selectedId) {
+                  const detail = await getPerson(selectedId);
                   setSelectedPerson(sanitizePerson(detail));
                   setSelectedRelationships((detail.relationships || []) as GraphEdge[]);
                   setSelectedSiblings(Array.isArray(detail.siblings) ? detail.siblings as string[] : []);

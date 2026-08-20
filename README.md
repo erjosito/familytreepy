@@ -107,6 +107,22 @@ Authentication uses **backend-proxied OAuth** — the backend handles the full a
 
 See `docs/auth-setup.md` for detailed Entra External ID setup instructions.
 
+## Shareable graph views
+
+The graph page stores its view in optional URL query parameters, so copying the
+browser URL preserves the current graph:
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `center` | Person ID at the center of the graph | Entire tree |
+| `radius` | Number of relationship steps to show (`1`-`10`) | `2` |
+| `layout` | Graph layout (`family`, `breadthfirst`, `concentric`, `cose`, `grid`, or `circle`) | `family` |
+| `person` | Person ID whose details are open | None |
+
+Default and invalid values are omitted when the URL is normalized. Browser
+Back and Forward restore graph navigation without affecting the separate story
+and person profile routes.
+
 ## CLI Tool
 
 A command-line interface for managing the tree directly:
