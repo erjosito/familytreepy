@@ -2,12 +2,18 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import cytoscape, { type Core, type EventObject, type LayoutOptions } from "cytoscape";
+import fcose from "cytoscape-fcose";
 import type { GraphData } from "@/lib/types";
 
-export type LayoutMode = "breadthfirst" | "concentric" | "cose" | "grid" | "circle";
+cytoscape.use(fcose);
+
+const MAX_REFINED_FAMILY_NODES = 350;
+
+export type LayoutMode = "family" | "breadthfirst" | "concentric" | "cose" | "grid" | "circle";
 
 export const LAYOUT_OPTIONS: { value: LayoutMode; labelKey: string }[] = [
-  { value: "breadthfirst", labelKey: "layout.hierarchical" },
+  { value: "family", labelKey: "layout.family" },
+  { value: "breadthfirst", labelKey: "layout.legacyHierarchical" },
   { value: "concentric", labelKey: "layout.radial" },
   { value: "cose", labelKey: "layout.forceDirected" },
   { value: "grid", labelKey: "layout.grid" },
@@ -273,7 +279,59 @@ function buildHierarchicalLayout(
   } as unknown as LayoutOptions;
 }
 
-function getLayoutConfig(mode: LayoutMode, elements: { data: Record<string, unknown> }[]): LayoutOptions {
+function buildFamilyLayout(elements: { data: Record<string, unknown> }[]): LayoutOptions {
+  const levels = new Map<number, string[]>();
+  const nodeLevels = new Map<string, number>();
+
+  for (const element of elements) {
+    if (element.data.source) continue;
+    const id = element.data.id as string;
+    const level = typeof element.data.level === "number" ? element.data.level : 0;
+    nodeLevels.set(id, level);
+    if (!levels.has(level)) levels.set(level, []);
+    levels.get(level)!.push(id);
+  }
+
+  const horizontalLevels = [...levels.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, ids]) => ids)
+    .filter((ids) => ids.length > 1);
+
+  const relativePlacementConstraint = elements
+    .filter((element) => element.data.source && element.data.type === "isChildOf")
+    .flatMap((element) => {
+      const child = element.data.source as string;
+      const parent = element.data.target as string;
+      const childLevel = nodeLevels.get(child);
+      const parentLevel = nodeLevels.get(parent);
+      if (childLevel === undefined || parentLevel === undefined || childLevel <= parentLevel) return [];
+      return [{ top: parent, bottom: child, gap: 150 }];
+    });
+
+  return {
+    name: "fcose",
+    quality: "proof",
+    randomize: false,
+    animate: false,
+    fit: true,
+    padding: 50,
+    nodeDimensionsIncludeLabels: true,
+    uniformNodeDimensions: false,
+    packComponents: false,
+    nodeSeparation: 100,
+    nodeRepulsion: 9000,
+    idealEdgeLength: (edge: { data: (key: string) => unknown }) =>
+      edge.data("type") === "isSpouseOf" ? 100 : 160,
+    edgeElasticity: (edge: { data: (key: string) => unknown }) =>
+      edge.data("type") === "isSpouseOf" ? 0.7 : 0.45,
+    numIter: 1200,
+    gravity: 0.2,
+    alignmentConstraint: { horizontal: horizontalLevels },
+    relativePlacementConstraint,
+  } as LayoutOptions;
+}
+
+function getLayoutConfig(mode: Exclude<LayoutMode, "family">, elements: { data: Record<string, unknown> }[]): LayoutOptions {
   if (mode === "breadthfirst") {
     return buildHierarchicalLayout(elements);
   }
@@ -289,7 +347,7 @@ function getLayoutConfig(mode: LayoutMode, elements: { data: Record<string, unkn
   }
 }
 
-export default function GraphViewer({ data, layout = "breadthfirst", sasToken = "", onNodeClick, onNodeDblClick, onContextMenu, onNodeLongPress, relationshipColors = {}, focusNodeId, focusRequest }: Props) {
+export default function GraphViewer({ data, layout = "family", sasToken = "", onNodeClick, onNodeDblClick, onContextMenu, onNodeLongPress, relationshipColors = {}, focusNodeId, focusRequest }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const suppressTapUntilRef = useRef(0);
@@ -338,6 +396,21 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
       return `${API_BASE}/api/proxy/image?url=${encodeURIComponent(url)}`;
     };
 
+    const spouseEdges = new Map<string, GraphData["edges"][number]>();
+    const otherEdges: GraphData["edges"] = [];
+    for (const edge of data.edges) {
+      if (edge.type !== "isSpouseOf") {
+        otherEdges.push(edge);
+        continue;
+      }
+      const pairKey = [edge.source, edge.target].sort().join("\u0000");
+      const existing = spouseEdges.get(pairKey);
+      if (!existing || (existing.is_active === false && edge.is_active !== false)) {
+        spouseEdges.set(pairKey, edge);
+      }
+    }
+    const visibleEdges = [...otherEdges, ...spouseEdges.values()];
+
     const elements = [
       ...data.nodes.map((n) => {
         const picUrl = proxyUrl(n.profilepic);
@@ -352,13 +425,14 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
           },
         };
       }),
-      ...data.edges.map((e) => ({
+      ...visibleEdges.map((e) => ({
         data: {
           id: e.id,
           source: e.source,
           target: e.target,
           type: e.type,
           is_active: e.is_active ?? true,
+          familyRouting: layout === "family" ? "yes" : "no",
         },
       })),
     ];
@@ -382,6 +456,7 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
             "text-valign": "bottom",
             "text-halign": "center",
             "font-size": "11px",
+            "text-max-width": "110px",
             "background-color": "#FF7F3E",
             width: 40,
             height: 40,
@@ -396,6 +471,7 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
             "text-valign": "bottom",
             "text-halign": "center",
             "font-size": "11px",
+            "text-max-width": "110px",
             "background-image": "data(profilepicUrl)",
             "background-fit": "cover",
             "background-clip": "node",
@@ -436,6 +512,28 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
           } as cytoscape.Css.Edge,
         })),
         {
+          selector: 'edge[familyRouting = "yes"][type = "isChildOf"]',
+          style: {
+            "curve-style": "taxi",
+            "taxi-direction": "vertical",
+            "taxi-turn": "50%",
+            "taxi-turn-min-distance": 20,
+          } as cytoscape.Css.Edge,
+        },
+        {
+          selector: 'edge[type = "isSpouseOf"]',
+          style: {
+            "target-arrow-shape": "none",
+          } as cytoscape.Css.Edge,
+        },
+        {
+          selector: 'edge[familyRouting = "yes"][type = "isSpouseOf"]',
+          style: {
+            "curve-style": "straight",
+            width: 3,
+          } as cytoscape.Css.Edge,
+        },
+        {
           selector: "node:selected",
           style: {
             "border-width": 3,
@@ -453,12 +551,22 @@ export default function GraphViewer({ data, layout = "breadthfirst", sasToken = 
           } as cytoscape.Css.Node,
         },
       ],
-      layout: getLayoutConfig(layout, elements),
+      layout: layout === "family"
+        ? buildHierarchicalLayout(elements)
+        : getLayoutConfig(layout, elements),
     });
 
     cyRef.current.on("tap", "node", handleTap);
     cyRef.current.on("dbltap", "node", handleDblTap);
     cyRef.current.on("taphold", "node", handleTapHold);
+
+    if (layout === "family" && data.nodes.length <= MAX_REFINED_FAMILY_NODES) {
+      try {
+        cyRef.current.layout(buildFamilyLayout(elements)).run();
+      } catch (error) {
+        console.error("Family layout refinement failed; using legacy hierarchical positions.", error);
+      }
+    }
 
     return () => {
       try { cyRef.current?.destroy(); } catch { /* ignore */ }

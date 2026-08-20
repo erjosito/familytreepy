@@ -156,3 +156,17 @@ class TestFormatForApi:
         result = tree.format_for_api()
         node = next(n for n in result["nodes"] if n["id"] == pid)
         assert node["fullname"] == "Jane Doe"
+
+    def test_assigns_generation_levels_to_disconnected_families(self, tree):
+        parent1 = tree.add_person(firstname="Parent", lastname="One")
+        child1 = tree.add_person(firstname="Child", lastname="One")
+        parent2 = tree.add_person(firstname="Parent", lastname="Two")
+        child2 = tree.add_person(firstname="Child", lastname="Two")
+        tree.add_relationship(child1, parent1, type="isChildOf")
+        tree.add_relationship(child2, parent2, type="isChildOf")
+
+        nodes = {node["id"]: node for node in tree.format_for_api()["nodes"]}
+
+        assert all("level" in node for node in nodes.values())
+        assert nodes[parent1]["level"] < nodes[child1]["level"]
+        assert nodes[parent2]["level"] < nodes[child2]["level"]

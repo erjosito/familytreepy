@@ -403,21 +403,16 @@ class FamilyTree:
                 elif self.graph[neighbor][node_id]['type'] == 'isSpouseOf':     # Although this shouldnt be required, since the isSpouseOf relationship is bidirectional
                     if 'level' not in self.graph.nodes[neighbor]:
                         assign_level(neighbor, level)
-        # Start from any node, from example, the first one, and assign levels recursively to all its neighbors
-        if len(self.graph.nodes) > 0:
-            # Take the first node as root
-            root_node_id = list(self.graph.nodes)[0]
-        else:
-            root_node_id = None
-        if root_node_id:
+        # Assign and normalize every connected component independently.
+        for root_node_id in self.graph.nodes():
+            if 'level' in self.graph.nodes[root_node_id]:
+                continue
             assign_level(root_node_id, 0)
-            # Get the minimum level assigned
-            min_level = min((data['level'] for node, data in self.graph.nodes(data=True) if 'level' in data), default=None)
+            component = nx.node_connected_component(self.graph.to_undirected(as_view=True), root_node_id)
+            min_level = min(self.graph.nodes[node]['level'] for node in component)
             if min_level != 0:
-                # Increase all levels by the negative value of min_level to make the lowest level 0
-                for node in self.graph.nodes():
-                    if 'level' in self.graph.nodes[node]:
-                        self.graph.nodes[node]['level'] += -1 * min_level
+                for node in component:
+                    self.graph.nodes[node]['level'] -= min_level
 
     ###############
     #     Get     #
