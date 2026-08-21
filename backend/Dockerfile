@@ -11,8 +11,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
 COPY familytree.py ./
+COPY tree_validation.py ./
 COPY config ./config
 COPY imagegen ./imagegen
+
+RUN python -c "import familytree, tree_validation"
 
 EXPOSE 8000
 

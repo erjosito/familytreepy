@@ -495,7 +495,6 @@ export default function ExplorePage() {
           <GraphViewer
             data={graphData}
             layout={layoutMode}
-            sasToken={sasToken}
             onNodeClick={handleNodeClick}
             onNodeDblClick={handleNodeDblClick}
             onContextMenu={handleContextMenu}

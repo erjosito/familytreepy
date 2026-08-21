@@ -58,6 +58,7 @@ COPY --from=python-deps /install /usr/local
 # Copy application code (preserving backend package structure)
 COPY backend/ ./backend/
 COPY familytree.py ./
+COPY tree_validation.py ./
 COPY config/ ./config/
 
 # Copy Next.js static export into /app/static
@@ -72,6 +73,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
 # Non-root user
+RUN python -c "import familytree, tree_validation"
 RUN useradd -r -s /bin/false appuser
 USER appuser
 
