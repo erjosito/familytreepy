@@ -8,9 +8,9 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from backend.app.routers import persons, relationships, graph, auth_router, geni
+from backend.app.routers import persons, relationships, graph, auth_router, geni, history
 
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.7.0"
 
 app = FastAPI(
     title="Family Tree API",
@@ -36,6 +36,7 @@ app.include_router(relationships.router)
 app.include_router(graph.router)
 app.include_router(graph.public_router)
 app.include_router(geni.router)
+app.include_router(history.router)
 
 
 @app.get("/api/health")

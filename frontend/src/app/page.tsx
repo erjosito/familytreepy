@@ -16,6 +16,7 @@ import {
   getStorageConfig,
   getValidationIssues,
   listPersons,
+  rollbackHistory,
   updatePerson,
   type PendingPersonRelationship,
   type ValidationIssue,
@@ -291,7 +292,7 @@ export default function ExplorePage() {
       if (!confirm(t("confirm.deletePerson")) || submitting) return;
       setSubmitting(true);
       try {
-        await deletePerson(nodeId);
+        const deleted = await deletePerson(nodeId);
         if (graphViewRef.current.person === nodeId) {
           updateSelectedId("", "replace");
           clearPersonDetails();
@@ -301,7 +302,23 @@ export default function ExplorePage() {
         }
         await fetchGraph();
         listPersons().then(setPersonList).catch(console.error);
-        toast.success(t("toast.personDeleted"));
+        toast.success(t("toast.personDeleted"), {
+          duration: 10000,
+          action: {
+            label: t("toast.undo"),
+            onClick: async () => {
+              try {
+                await rollbackHistory(deleted.revision_id);
+                await fetchGraph();
+                listPersons().then(setPersonList).catch(console.error);
+                toast.success(t("toast.changeUndone"));
+              } catch (err) {
+                console.error("Undo person deletion failed:", err);
+                toast.error(t("toast.undoFailed"));
+              }
+            },
+          },
+        });
       } catch (err) {
         console.error("Delete person failed:", err);
         toast.error(t("toast.personDeleteFailed"), {

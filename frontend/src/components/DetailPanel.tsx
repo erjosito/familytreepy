@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { PersonNode, GraphEdge } from "@/lib/types";
-import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, deleteRelationship, getNotes, addNote, deleteNote, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
+import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, deleteRelationship, rollbackHistory, getNotes, addNote, deleteNote, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
 import { formatDate, formatTimestamp } from "@/lib/dateUtils";
@@ -980,9 +980,24 @@ function RelationshipDeleteBtn({
     if (!confirm(t("rel.confirmDelete"))) return;
     setBusy(true);
     try {
-      await deleteRelationship(source, target);
+      const deleted = await deleteRelationship(source, target);
       onDeleted?.();
-      toast.success(t("toast.relationshipDeleted"));
+      toast.success(t("toast.relationshipDeleted"), {
+        duration: 10000,
+        action: {
+          label: t("toast.undo"),
+          onClick: async () => {
+            try {
+              await rollbackHistory(deleted.revision_id);
+              onDeleted?.();
+              toast.success(t("toast.changeUndone"));
+            } catch (err) {
+              console.error("Undo relationship deletion failed:", err);
+              toast.error(t("toast.undoFailed"));
+            }
+          },
+        },
+      });
     } catch (err) {
       console.error("Delete failed:", err);
       toast.error(t("toast.relationshipDeleteFailed"), {

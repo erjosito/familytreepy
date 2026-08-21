@@ -4,7 +4,8 @@ import os
 import uuid
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from backend.app.models import PersonCreate, PersonUpdate, PersonResponse
-from backend.app.dependencies import get_tree
+from backend.app.change_history import ChangeHistoryStore, apply_audited_change
+from backend.app.dependencies import get_history_store, get_tree
 from backend.app.auth import require_auth
 from tree_validation import (
     TreeValidationError,
@@ -17,6 +18,31 @@ router = APIRouter(prefix="/api/persons", tags=["persons"], dependencies=[Depend
 
 _MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 _ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
+
+
+def _actor(user: dict) -> str:
+    return user.get("email") or user.get("name") or "unknown"
+
+
+def _audit_person_change(
+    *,
+    tree,
+    history: ChangeHistoryStore,
+    user: dict,
+    person_id: str,
+    mutation,
+    change: str,
+):
+    return apply_audited_change(
+        tree=tree,
+        store=history,
+        actor=_actor(user),
+        operation="update",
+        entity_type="person",
+        entity_id=person_id,
+        mutation=mutation,
+        metadata={"change": change},
+    )[1]
 
 
 async def _validate_image_upload(file: UploadFile) -> bytes:
@@ -62,7 +88,12 @@ def get_person(person_id: str, tree=Depends(get_tree)):
 
 
 @router.post("", response_model=dict, status_code=201)
-def create_person(body: PersonCreate, tree=Depends(get_tree)):
+def create_person(
+    body: PersonCreate,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
     """Add a new person."""
     attrs = body.model_dump(
         exclude_none=True,
@@ -76,11 +107,10 @@ def create_person(body: PersonCreate, tree=Depends(get_tree)):
                 if key not in {"override_warnings", "relationships"}
             }
         )
-    previous_autosave = tree.autosave
     person_id = str(uuid.uuid4())
     while person_id in tree.graph:
         person_id = str(uuid.uuid4())
-    person_added = False
+
     try:
         staged_graph = tree.graph.copy()
         staged_graph.add_node(person_id, **attrs)
@@ -111,42 +141,45 @@ def create_person(body: PersonCreate, tree=Depends(get_tree)):
             )
         enforce_issues(issues, override_warnings=body.override_warnings)
 
-        tree.autosave = False
-        tree.add_person(
-            id=person_id,
-            override_warnings=True,
-            **attrs,
-        )
-        person_added = True
-        for source, target, relationship_type, start_date in staged_relationships:
-            tree.add_relationship(
-                source,
-                target,
-                type=relationship_type,
-                start_date=start_date,
+        def add_person_and_relationships():
+            tree.add_person(
+                id=person_id,
                 override_warnings=True,
+                **attrs,
             )
-        if previous_autosave:
-            tree.save()
+            for source, target, relationship_type, start_date in staged_relationships:
+                tree.add_relationship(
+                    source,
+                    target,
+                    type=relationship_type,
+                    start_date=start_date,
+                    override_warnings=True,
+                )
+
+        _, revision = apply_audited_change(
+            tree=tree,
+            store=history,
+            actor=_actor(user),
+            operation="create",
+            entity_type="person",
+            entity_id=person_id,
+            mutation=add_person_and_relationships,
+        )
     except TreeValidationError as exc:
-        if person_added and person_id in tree.graph:
-            tree.graph.remove_node(person_id)
         raise HTTPException(status_code=422, detail=exc.to_detail()) from exc
     except ValueError as exc:
-        if person_added and person_id in tree.graph:
-            tree.graph.remove_node(person_id)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception:
-        if person_added and person_id in tree.graph:
-            tree.graph.remove_node(person_id)
-        raise
-    finally:
-        tree.autosave = previous_autosave
-    return {"id": person_id}
+    return {"id": person_id, "revision_id": revision["id"]}
 
 
 @router.put("/{person_id}")
-def update_person(person_id: str, body: PersonUpdate, tree=Depends(get_tree)):
+def update_person(
+    person_id: str,
+    body: PersonUpdate,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
     """Update person attributes. Send empty string to clear a field."""
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
@@ -166,19 +199,33 @@ def update_person(person_id: str, body: PersonUpdate, tree=Depends(get_tree)):
     clear_fields = {key for key, value in attrs.items() if value == ""}
     attrs = {key: value for key, value in attrs.items() if key not in clear_fields}
     try:
-        tree.update_person(
-            person_id,
-            clear_fields=clear_fields,
-            override_warnings=body.override_warnings,
-            **attrs,
+        _, revision = apply_audited_change(
+            tree=tree,
+            store=history,
+            actor=_actor(user),
+            operation="update",
+            entity_type="person",
+            entity_id=person_id,
+            mutation=lambda: tree.update_person(
+                person_id,
+                clear_fields=clear_fields,
+                override_warnings=body.override_warnings,
+                **attrs,
+            ),
         )
     except TreeValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.to_detail()) from exc
-    return {"id": person_id, "updated": True}
+    return {"id": person_id, "updated": True, "revision_id": revision["id"]}
 
 
 @router.post("/{person_id}/profilepic")
-async def upload_profile_pic(person_id: str, file: UploadFile = File(...), tree=Depends(get_tree)):
+async def upload_profile_pic(
+    person_id: str,
+    file: UploadFile = File(...),
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
     """Upload a profile picture to Azure Storage and set it on the person."""
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
@@ -203,8 +250,15 @@ async def upload_profile_pic(person_id: str, file: UploadFile = File(...), tree=
         )
         blob_client.upload_blob(content, overwrite=True)
         blob_url = f"https://{account}.blob.core.windows.net/{container}/{blob_name}"
-        tree.add_profile_picture(person_id, blob_url)
-        return {"url": blob_url}
+        revision = _audit_person_change(
+            tree=tree,
+            history=history,
+            user=user,
+            person_id=person_id,
+            mutation=lambda: tree.add_profile_picture(person_id, blob_url),
+            change="profile_picture",
+        )
+        return {"url": blob_url, "revision_id": revision["id"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
 
@@ -214,6 +268,8 @@ async def upload_picture(
     person_id: str,
     file: UploadFile = File(...),
     tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
 ):
     """Upload a picture and add it to the person's pictures list.
 
@@ -242,8 +298,15 @@ async def upload_picture(
         )
         blob_client.upload_blob(content, overwrite=True)
         blob_url = f"https://{account}.blob.core.windows.net/{container}/{blob_name}"
-        tree.add_picture(person_id, blob_url)
-        return {"url": blob_url}
+        revision = _audit_person_change(
+            tree=tree,
+            history=history,
+            user=user,
+            person_id=person_id,
+            mutation=lambda: tree.add_picture(person_id, blob_url),
+            change="picture_added",
+        )
+        return {"url": blob_url, "revision_id": revision["id"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
 
@@ -257,16 +320,31 @@ class _TagRequest(_BaseModel):
 
 
 @router.put("/{person_id}/pictures/tag")
-def tag_picture(person_id: str, body: _TagRequest, tree=Depends(get_tree)):
+def tag_picture(
+    person_id: str,
+    body: _TagRequest,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
     """Add a picture URL to additional persons' pictures lists (tagging)."""
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
     tagged = []
+    revisions = []
     for pid in body.person_ids:
         if tree.get_person(pid) is not None and pid != person_id:
-            tree.add_picture(pid, body.url)
+            revision = _audit_person_change(
+                tree=tree,
+                history=history,
+                user=user,
+                person_id=pid,
+                mutation=lambda pid=pid: tree.add_picture(pid, body.url),
+                change="picture_tagged",
+            )
             tagged.append(pid)
-    return {"url": body.url, "tagged": tagged}
+            revisions.append(revision["id"])
+    return {"url": body.url, "tagged": tagged, "revision_ids": revisions}
 
 
 class _RemovePicRequest(_BaseModel):
@@ -274,12 +352,25 @@ class _RemovePicRequest(_BaseModel):
 
 
 @router.delete("/{person_id}/pictures")
-def remove_picture(person_id: str, body: _RemovePicRequest, tree=Depends(get_tree)):
+def remove_picture(
+    person_id: str,
+    body: _RemovePicRequest,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
     """Remove a picture URL from a person's pictures list."""
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
-    tree.remove_picture(person_id, body.url)
-    return {"removed": True}
+    revision = _audit_person_change(
+        tree=tree,
+        history=history,
+        user=user,
+        person_id=person_id,
+        mutation=lambda: tree.remove_picture(person_id, body.url),
+        change="picture_removed",
+    )
+    return {"removed": True, "revision_id": revision["id"]}
 
 
 class _PeopleInPicRequest(_BaseModel):
@@ -298,13 +389,30 @@ class _UntagRequest(_BaseModel):
 
 
 @router.put("/{person_id}/pictures/untag")
-def untag_picture(person_id: str, body: _UntagRequest, tree=Depends(get_tree)):
+def untag_picture(
+    person_id: str,
+    body: _UntagRequest,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
     """Remove a picture URL from a specific person's pictures list (untag)."""
     target = tree.get_person(body.person_id)
     if target is None:
         raise HTTPException(status_code=404, detail="Target person not found")
-    tree.remove_picture(body.person_id, body.url)
-    return {"url": body.url, "untagged": body.person_id}
+    revision = _audit_person_change(
+        tree=tree,
+        history=history,
+        user=user,
+        person_id=body.person_id,
+        mutation=lambda: tree.remove_picture(body.person_id, body.url),
+        change="picture_untagged",
+    )
+    return {
+        "url": body.url,
+        "untagged": body.person_id,
+        "revision_id": revision["id"],
+    }
 
 
 # ---- Notes -----------------------------------------------------------------
@@ -347,7 +455,13 @@ def get_notes(person_id: str, tree=Depends(get_tree)):
 
 
 @router.post("/{person_id}/notes", status_code=201)
-def add_note(person_id: str, body: _NoteCreate, tree=Depends(get_tree)):
+def add_note(
+    person_id: str,
+    body: _NoteCreate,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
     """Add a note to a person."""
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
@@ -358,12 +472,25 @@ def add_note(person_id: str, body: _NoteCreate, tree=Depends(get_tree)):
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     notes.append(note)
-    _save_notes(tree, person_id, notes)
-    return note
+    revision = _audit_person_change(
+        tree=tree,
+        history=history,
+        user=user,
+        person_id=person_id,
+        mutation=lambda: _save_notes(tree, person_id, notes),
+        change="note_added",
+    )
+    return {**note, "revision_id": revision["id"]}
 
 
 @router.delete("/{person_id}/notes/{note_index}")
-def delete_note(person_id: str, note_index: int, tree=Depends(get_tree)):
+def delete_note(
+    person_id: str,
+    note_index: int,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
     """Delete a note by index."""
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
@@ -371,14 +498,34 @@ def delete_note(person_id: str, note_index: int, tree=Depends(get_tree)):
     if note_index < 0 or note_index >= len(notes):
         raise HTTPException(status_code=404, detail="Note not found")
     notes.pop(note_index)
-    _save_notes(tree, person_id, notes)
-    return {"deleted": True}
+    revision = _audit_person_change(
+        tree=tree,
+        history=history,
+        user=user,
+        person_id=person_id,
+        mutation=lambda: _save_notes(tree, person_id, notes),
+        change="note_deleted",
+    )
+    return {"deleted": True, "revision_id": revision["id"]}
 
 
 @router.delete("/{person_id}")
-def delete_person(person_id: str, tree=Depends(get_tree)):
-    """Delete a person."""
+def delete_person(
+    person_id: str,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
+    """Soft-delete a person by removing it from the active graph and journaling its tombstone."""
     if tree.get_person(person_id) is None:
         raise HTTPException(status_code=404, detail="Person not found")
-    tree.delete_person(person_id)
-    return {"id": person_id, "deleted": True}
+    _, revision = apply_audited_change(
+        tree=tree,
+        store=history,
+        actor=_actor(user),
+        operation="delete",
+        entity_type="person",
+        entity_id=person_id,
+        mutation=lambda: tree.delete_person(person_id),
+    )
+    return {"id": person_id, "deleted": True, "revision_id": revision["id"]}

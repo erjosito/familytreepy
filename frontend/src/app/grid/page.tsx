@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { listPersons, getPerson, updatePerson, deletePerson, getValidationIssues, type ValidationIssue } from "@/lib/api";
+import { listPersons, getPerson, updatePerson, deletePerson, rollbackHistory, getValidationIssues, type ValidationIssue } from "@/lib/api";
 import { useAdminView } from "@/lib/adminView";
 import { useI18n } from "@/lib/i18n";
 import { formatDate } from "@/lib/dateUtils";
@@ -345,9 +345,24 @@ export default function GridPage() {
                               if (deletingId || !confirm(t("confirm.deletePerson"))) return;
                               setDeletingId(p.id);
                               try {
-                                await deletePerson(p.id);
+                                const deleted = await deletePerson(p.id);
                                 await fetchAll();
-                                toast.success(t("toast.personDeleted"));
+                                toast.success(t("toast.personDeleted"), {
+                                  duration: 10000,
+                                  action: {
+                                    label: t("toast.undo"),
+                                    onClick: async () => {
+                                      try {
+                                        await rollbackHistory(deleted.revision_id);
+                                        await fetchAll();
+                                        toast.success(t("toast.changeUndone"));
+                                      } catch (err) {
+                                        console.error("Undo person deletion failed:", err);
+                                        toast.error(t("toast.undoFailed"));
+                                      }
+                                    },
+                                  },
+                                });
                               } catch (err) {
                                 console.error("Delete failed:", err);
                                 toast.error(t("toast.personDeleteFailed"));
