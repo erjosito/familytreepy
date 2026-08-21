@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import cytoscape, { type Core, type EventObject, type LayoutOptions } from "cytoscape";
+import cytoscape, { type Core, type EventObject, type LayoutOptions, type Position } from "cytoscape";
 import fcose from "cytoscape-fcose";
 import type { LayoutMode } from "@/lib/graphViewState";
 import type { GraphData } from "@/lib/types";
@@ -9,6 +9,14 @@ import type { GraphData } from "@/lib/types";
 cytoscape.use(fcose);
 
 const MAX_REFINED_FAMILY_NODES = 350;
+const DEFAULT_RELATIONSHIP_COLORS: Record<string, string> = {};
+
+interface SavedGraphState {
+  signature: string;
+  positions: Record<string, Position>;
+  pan: Position;
+  zoom: number;
+}
 
 export type { LayoutMode } from "@/lib/graphViewState";
 
@@ -24,7 +32,6 @@ export const LAYOUT_OPTIONS: { value: LayoutMode; labelKey: string }[] = [
 interface Props {
   data: GraphData;
   layout?: LayoutMode;
-  sasToken?: string;
   onNodeClick?: (nodeId: string) => void;
   onNodeDblClick?: (nodeId: string) => void;
   onContextMenu?: (nodeId: string, x: number, y: number) => void;
@@ -348,10 +355,43 @@ function getLayoutConfig(mode: Exclude<LayoutMode, "family">, elements: { data: 
   }
 }
 
-export default function GraphViewer({ data, layout = "family", sasToken = "", onNodeClick, onNodeDblClick, onContextMenu, onNodeLongPress, relationshipColors = {}, focusNodeId, focusRequest }: Props) {
+function getGraphSignature(data: GraphData, layout: LayoutMode): string {
+  const nodes = data.nodes.map((node) => node.id).sort().join("\u0000");
+  const edges = data.edges
+    .map((edge) => `${edge.source}\u0000${edge.target}\u0000${edge.type}`)
+    .sort()
+    .join("\u0001");
+  return `${layout}\u0002${nodes}\u0002${edges}`;
+}
+
+export default function GraphViewer({ data, layout = "family", onNodeClick, onNodeDblClick, onContextMenu, onNodeLongPress, relationshipColors = DEFAULT_RELATIONSHIP_COLORS, focusNodeId, focusRequest }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const suppressTapUntilRef = useRef(0);
+  const savedGraphStateRef = useRef<SavedGraphState | null>(null);
+  const focusRef = useRef({ nodeId: focusNodeId, request: focusRequest });
+  const appliedFocusRef = useRef<{ nodeId: string; request: number | undefined } | null>(null);
+
+  const applyPendingFocus = useCallback(() => {
+    const cy = cyRef.current;
+    const { nodeId, request } = focusRef.current;
+    if (!cy || !nodeId) return;
+    if (
+      appliedFocusRef.current?.nodeId === nodeId &&
+      appliedFocusRef.current.request === request
+    ) {
+      return;
+    }
+    const node = cy.getElementById(nodeId);
+    if (node.empty()) return;
+    cy.elements().unselect();
+    node.select();
+    cy.animate(
+      { center: { eles: node }, zoom: Math.max(cy.zoom(), 1.4) },
+      { duration: 300 },
+    );
+    appliedFocusRef.current = { nodeId, request };
+  }, []);
 
   const handleTap = useCallback(
     (e: EventObject) => {
@@ -391,6 +431,13 @@ export default function GraphViewer({ data, layout = "family", sasToken = "", on
     if (!containerRef.current) return;
 
     const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+    const graphSignature = getGraphSignature(data, layout);
+    const savedGraphState = savedGraphStateRef.current;
+    const canRestoreGraphState = Boolean(
+      savedGraphState &&
+      savedGraphState.signature === graphSignature &&
+      data.nodes.every((node) => savedGraphState.positions[node.id]),
+    );
     // Proxy profile pics through the backend to avoid browser CORS on canvas
     const proxyUrl = (url: string | undefined) => {
       if (!url) return undefined;
@@ -552,40 +599,58 @@ export default function GraphViewer({ data, layout = "family", sasToken = "", on
           } as cytoscape.Css.Node,
         },
       ],
-      layout: layout === "family"
-        ? buildHierarchicalLayout(elements)
-        : getLayoutConfig(layout, elements),
+      layout: canRestoreGraphState && savedGraphState
+        ? {
+            name: "preset",
+            positions: (nodeId) => savedGraphState.positions[nodeId],
+            fit: false,
+          }
+        : layout === "family"
+          ? buildHierarchicalLayout(elements)
+          : getLayoutConfig(layout, elements),
     });
 
     cyRef.current.on("tap", "node", handleTap);
     cyRef.current.on("dbltap", "node", handleDblTap);
     cyRef.current.on("taphold", "node", handleTapHold);
 
-    if (layout === "family" && data.nodes.length <= MAX_REFINED_FAMILY_NODES) {
+    if (canRestoreGraphState && savedGraphState) {
+      cyRef.current.zoom(savedGraphState.zoom);
+      cyRef.current.pan(savedGraphState.pan);
+    } else if (layout === "family" && data.nodes.length <= MAX_REFINED_FAMILY_NODES) {
       try {
         cyRef.current.layout(buildFamilyLayout(elements)).run();
       } catch (error) {
         console.error("Family layout refinement failed; using legacy hierarchical positions.", error);
       }
     }
+    applyPendingFocus();
 
     return () => {
-      try { cyRef.current?.destroy(); } catch { /* ignore */ }
-      cyRef.current = null;
+      const cy = cyRef.current;
+      if (cy) {
+        const positions: Record<string, Position> = {};
+        cy.nodes().forEach((node) => {
+          positions[node.id()] = node.position();
+        });
+        savedGraphStateRef.current = {
+          signature: graphSignature,
+          positions,
+          pan: cy.pan(),
+          zoom: cy.zoom(),
+        };
+      }
+      try { cy?.destroy(); } catch { /* ignore */ }
+      if (cyRef.current === cy) {
+        cyRef.current = null;
+      }
     };
-  }, [data, layout, sasToken, relationshipColors, handleTap, handleDblTap, handleTapHold]);
+  }, [data, layout, relationshipColors, handleTap, handleDblTap, handleTapHold, applyPendingFocus]);
 
   useEffect(() => {
-    if (!focusNodeId || !cyRef.current) return;
-    const node = cyRef.current.getElementById(focusNodeId);
-    if (node.empty()) return;
-    cyRef.current.elements().unselect();
-    node.select();
-    cyRef.current.animate(
-      { center: { eles: node }, zoom: Math.max(cyRef.current.zoom(), 1.4) },
-      { duration: 300 }
-    );
-  }, [focusNodeId, focusRequest, data, layout]);
+    focusRef.current = { nodeId: focusNodeId, request: focusRequest };
+    applyPendingFocus();
+  }, [focusNodeId, focusRequest, applyPendingFocus]);
 
   // Suppress browser context menu and handle right-click on nodes.
   useEffect(() => {

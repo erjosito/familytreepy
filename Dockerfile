@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY ./app.py ./
 COPY ./familytree.py ./
+COPY ./tree_validation.py ./
 COPY ./treelogo01.svg ./
 RUN mkdir -p .streamlit
 RUN mkdir -p pages
