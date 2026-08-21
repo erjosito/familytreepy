@@ -11,6 +11,24 @@ export interface ValidationIssue {
   person_ids: string[];
 }
 
+export interface ChangeHistoryEntry {
+  id: string;
+  timestamp: string;
+  actor: string;
+  operation: string;
+  entity_type: "person" | "relationship";
+  entity_id: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  metadata: {
+    source?: string;
+    target?: string;
+    rollback_of?: string;
+  };
+  expires_at: string;
+  can_rollback: boolean;
+}
+
 interface ValidationDetail {
   code: "validation_error" | "validation_warning";
   message: string;
@@ -123,7 +141,7 @@ export async function createPerson(
   data: Record<string, unknown>,
   relationships: PendingPersonRelationship[] = [],
   overrideWarnings = false,
-): Promise<{ id: string }> {
+): Promise<{ id: string; revision_id: string }> {
   const res = await apiFetch("/api/persons", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -140,7 +158,7 @@ export async function updatePerson(
   personId: string,
   data: Record<string, unknown>,
   overrideWarnings = false,
-): Promise<{ id: string; updated: boolean }> {
+): Promise<{ id: string; updated: boolean; revision_id: string }> {
   const res = await apiFetch(`/api/persons/${personId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -149,7 +167,7 @@ export async function updatePerson(
   return res.json();
 }
 
-export async function deletePerson(personId: string): Promise<{ id: string; deleted: boolean }> {
+export async function deletePerson(personId: string): Promise<{ id: string; deleted: boolean; revision_id: string }> {
   const res = await apiFetch(`/api/persons/${personId}`, { method: "DELETE" });
   return res.json();
 }
@@ -280,7 +298,7 @@ export async function createRelationship(data: {
   target: string;
   type: string;
   start_date?: string;
-}, overrideWarnings = false): Promise<{ source: string; target: string; type: string; created: boolean }> {
+}, overrideWarnings = false): Promise<{ source: string; target: string; type: string; created: boolean; revision_id: string }> {
   const res = await apiFetch("/api/relationships", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -294,7 +312,7 @@ export async function deactivateRelationship(
   targetId: string,
   endDate?: string,
   overrideWarnings = false,
-): Promise<{ source: string; target: string; deactivated: boolean }> {
+): Promise<{ source: string; target: string; deactivated: boolean; revision_id: string }> {
   const res = await apiFetch(`/api/relationships/${sourceId}/${targetId}/deactivate`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -309,7 +327,7 @@ export async function deactivateRelationship(
 export async function reactivateRelationship(
   sourceId: string,
   targetId: string
-): Promise<{ source: string; target: string; reactivated: boolean }> {
+): Promise<{ source: string; target: string; reactivated: boolean; revision_id: string }> {
   const res = await apiFetch(`/api/relationships/${sourceId}/${targetId}/reactivate`, {
     method: "PUT",
   });
@@ -319,9 +337,41 @@ export async function reactivateRelationship(
 export async function deleteRelationship(
   sourceId: string,
   targetId: string
-): Promise<{ source: string; target: string; deleted: boolean }> {
+): Promise<{ source: string; target: string; deleted: boolean; revision_id: string }> {
   const res = await apiFetch(`/api/relationships/${sourceId}/${targetId}`, {
     method: "DELETE",
+  });
+  return res.json();
+}
+
+// ── Change History ───────────────────────────────────────────────────────
+
+export interface HistoryFilters {
+  actor?: string;
+  operation?: string;
+  entity_type?: string;
+  entity_id?: string;
+  from_date?: string;
+  to_date?: string;
+  limit?: number;
+}
+
+export async function listHistory(filters: HistoryFilters = {}): Promise<ChangeHistoryEntry[]> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+  const res = await apiFetch(`/api/history?${params}`);
+  return res.json();
+}
+
+export async function rollbackHistory(
+  revisionId: string,
+): Promise<{ rolled_back: string; revision_id: string }> {
+  const res = await apiFetch(`/api/history/${revisionId}/rollback`, {
+    method: "POST",
   });
   return res.json();
 }

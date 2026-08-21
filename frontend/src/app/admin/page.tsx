@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { listUsers, addUser, updateUser, deleteUser } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ToastProvider";
+import ChangeHistoryPanel from "@/components/ChangeHistoryPanel";
 
 interface User {
   email: string;
@@ -119,7 +120,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-3xl mx-auto p-3 sm:p-6 space-y-6">
+      <div className="max-w-6xl mx-auto p-3 sm:p-6 space-y-8">
         <h1 className="text-2xl font-bold text-gray-900">{t("admin.title")}</h1>
 
         {error && (
@@ -263,6 +264,8 @@ export default function AdminPage() {
             </button>
           </form>
         </div>
+
+        <ChangeHistoryPanel />
       </div>
     </div>
   );

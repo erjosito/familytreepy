@@ -11,8 +11,10 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from familytree import FamilyTree
+from backend.app.auth import require_auth
+from backend.app.change_history import ChangeHistoryStore
 from backend.app.schemas.relationship_schema import load_relationship_schema
-from backend.app.dependencies import get_tree
+from backend.app.dependencies import get_history_store, get_tree
 from backend.app.main import app
 
 
@@ -23,9 +25,15 @@ def _override_tree(tmp_path):
     schema = load_relationship_schema(config_path)
     local_file = str(tmp_path / "test_api_tree.gml")
     test_tree = FamilyTree(backend="local", localfile=local_file, relationship_schema=schema, autosave=False)
+    history_store = ChangeHistoryStore(
+        backend="local",
+        local_file=str(tmp_path / "test_api_history.jsonl"),
+    )
     app.dependency_overrides[get_tree] = lambda: test_tree
+    app.dependency_overrides[get_history_store] = lambda: history_store
     yield test_tree
     app.dependency_overrides.pop(get_tree, None)
+    app.dependency_overrides.pop(get_history_store, None)
 
 
 @pytest.fixture()
@@ -45,7 +53,7 @@ def test_health(client, monkeypatch):
     assert resp.status_code == 200
     assert resp.json() == {
         "status": "ok",
-        "version": "0.6.1",
+        "version": "0.7.0",
         "revision": "test-revision",
         "built_at": "2026-08-19T12:00:00Z",
     }
@@ -181,7 +189,84 @@ def test_delete_person(client):
     resp = client.delete(f"/api/persons/{pid}")
     assert resp.status_code == 200
     assert resp.json()["deleted"] is True
+    assert resp.json()["revision_id"]
     assert client.get(f"/api/persons/{pid}").status_code == 404
+
+
+def test_history_records_actor_and_before_after_values(client):
+    created = client.post(
+        "/api/persons",
+        json={"firstname": "History", "lastname": "Person"},
+    )
+    pid = created.json()["id"]
+    updated = client.put(f"/api/persons/{pid}", json={"firstname": "Updated"})
+    assert updated.status_code == 200
+
+    history = client.get(f"/api/history?entity_id={pid}").json()
+    assert [entry["operation"] for entry in history] == ["update", "create"]
+    assert history[0]["actor"] == "dev@localhost"
+    assert history[0]["before"]["attributes"]["firstname"] == "History"
+    assert history[0]["after"]["attributes"]["firstname"] == "Updated"
+    assert history[0]["can_rollback"] is True
+
+
+def test_deleted_person_can_be_restored_with_relationships(client):
+    parent, child = _create_two_persons(client)
+    client.post(
+        "/api/relationships",
+        json={"source": child, "target": parent, "type": "isChildOf"},
+    )
+    deleted = client.delete(f"/api/persons/{parent}")
+    revision_id = deleted.json()["revision_id"]
+    assert client.get(f"/api/persons/{parent}").status_code == 404
+
+    rollback = client.post(f"/api/history/{revision_id}/rollback")
+    assert rollback.status_code == 200
+    restored = client.get(f"/api/persons/{parent}")
+    assert restored.status_code == 200
+    relationships = client.get("/api/relationships").json()
+    assert any(
+        relationship["source"] == child and relationship["target"] == parent
+        for relationship in relationships
+    )
+
+    history = client.get(f"/api/history?entity_id={parent}").json()
+    assert history[0]["operation"] == "rollback"
+    assert history[0]["metadata"]["rollback_of"] == revision_id
+    assert next(entry for entry in history if entry["id"] == revision_id)["can_rollback"] is False
+
+
+def test_rollback_rejects_later_changes_to_same_person(client):
+    created = client.post("/api/persons", json={"firstname": "First"})
+    pid = created.json()["id"]
+    first_update = client.put(f"/api/persons/{pid}", json={"firstname": "Second"})
+    first_revision = first_update.json()["revision_id"]
+    client.put(f"/api/persons/{pid}", json={"firstname": "Third"})
+
+    rollback = client.post(f"/api/history/{first_revision}/rollback")
+    assert rollback.status_code == 409
+    assert "changed after" in rollback.json()["detail"]
+    assert client.get(f"/api/persons/{pid}").json()["firstname"] == "Third"
+
+
+def test_history_access_and_rollback_are_scoped_to_the_actor(client):
+    alice = {"email": "alice@example.com", "name": "Alice", "roles": []}
+    bob = {"email": "bob@example.com", "name": "Bob", "roles": []}
+    app.dependency_overrides[require_auth] = lambda: alice
+    try:
+        created = client.post("/api/persons", json={"firstname": "Private"})
+        pid = created.json()["id"]
+        deleted = client.delete(f"/api/persons/{pid}")
+        revision_id = deleted.json()["revision_id"]
+
+        assert client.get("/api/history").status_code == 403
+        app.dependency_overrides[require_auth] = lambda: bob
+        assert client.post(f"/api/history/{revision_id}/rollback").status_code == 403
+
+        app.dependency_overrides[require_auth] = lambda: alice
+        assert client.post(f"/api/history/{revision_id}/rollback").status_code == 200
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
 
 
 # ------------------------------------------------------------------
@@ -199,6 +284,29 @@ def test_create_relationship(client):
     resp = client.post("/api/relationships", json={"source": p1, "target": p2, "type": "isSpouseOf"})
     assert resp.status_code == 201
     assert resp.json()["created"] is True
+
+
+def test_created_reverse_relationships_can_be_undone_independently(client):
+    p1, p2 = _create_two_persons(client)
+    first = client.post(
+        "/api/relationships",
+        json={"source": p1, "target": p2, "type": "isSpouseOf"},
+    )
+    second = client.post(
+        "/api/relationships",
+        json={"source": p2, "target": p1, "type": "isSpouseOf"},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    rollback = client.post(
+        f"/api/history/{second.json()['revision_id']}/rollback"
+    )
+    assert rollback.status_code == 200
+    relationships = client.get("/api/relationships").json()
+    assert len(relationships) == 1
+    assert relationships[0]["source"] == p1
+    assert relationships[0]["target"] == p2
 
 
 def test_relationship_hard_integrity_errors_are_structured(client):
@@ -278,6 +386,26 @@ def test_deactivate_relationship(client):
     resp = client.put(f"/api/relationships/{p1}/{p2}/deactivate", json={"end_date": "2024-06-01"})
     assert resp.status_code == 200
     assert resp.json()["deactivated"] is True
+
+
+def test_deleted_relationship_can_be_restored(client):
+    p1, p2 = _create_two_persons(client)
+    client.post(
+        "/api/relationships",
+        json={"source": p1, "target": p2, "type": "isSpouseOf"},
+    )
+    deleted = client.delete(f"/api/relationships/{p1}/{p2}")
+    assert deleted.status_code == 200
+    assert client.get("/api/relationships").json() == []
+
+    rollback = client.post(
+        f"/api/history/{deleted.json()['revision_id']}/rollback"
+    )
+    assert rollback.status_code == 200
+    relationships = client.get("/api/relationships").json()
+    assert len(relationships) == 1
+    assert relationships[0]["source"] == p1
+    assert relationships[0]["target"] == p2
 
 
 # ------------------------------------------------------------------

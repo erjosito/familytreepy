@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { getPerson, listPersons, getStorageConfig, getNotes, addNote, deleteNote, uploadPicture, uploadProfilePic, tagPicture, removePicture, getPeopleInPicture, untagPicture, deactivateRelationship, reactivateRelationship, deleteRelationship, updatePerson, deletePerson, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
+import { getPerson, listPersons, getStorageConfig, getNotes, addNote, deleteNote, uploadPicture, uploadProfilePic, tagPicture, removePicture, getPeopleInPicture, untagPicture, deactivateRelationship, reactivateRelationship, deleteRelationship, updatePerson, deletePerson, rollbackHistory, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
 import type { PersonNode, GraphEdge } from "@/lib/types";
 import { useAdminView } from "@/lib/adminView";
 import { useI18n } from "@/lib/i18n";
@@ -189,6 +189,7 @@ function PersonPageContent() {
           person={person}
           withSas={withSas}
           onUpdated={fetchPerson}
+          onDeleted={() => setPerson(null)}
           t={t}
         />
 
@@ -370,11 +371,13 @@ function ProfileHeader({
   person,
   withSas,
   onUpdated,
+  onDeleted,
   t,
 }: {
   person: PersonNode;
   withSas: (url: string | undefined) => string | undefined;
   onUpdated: () => void;
+  onDeleted: () => void;
   t: TFunc;
 }) {
   const { adminView } = useAdminView();
@@ -470,9 +473,24 @@ function ProfileHeader({
     if (deletingPerson || !confirm(t("confirm.deletePerson"))) return;
     setDeletingPerson(true);
     try {
-      await deletePerson(person.id);
-      toast.success(t("toast.personDeleted"));
-      window.location.href = "/";
+      const deleted = await deletePerson(person.id);
+      onDeleted();
+      toast.success(t("toast.personDeleted"), {
+        duration: 10000,
+        action: {
+          label: t("toast.undo"),
+          onClick: async () => {
+            try {
+              await rollbackHistory(deleted.revision_id);
+              await onUpdated();
+              toast.success(t("toast.changeUndone"));
+            } catch (err) {
+              console.error("Undo person deletion failed:", err);
+              toast.error(t("toast.undoFailed"));
+            }
+          },
+        },
+      });
     } catch (err) {
       console.error("Delete person failed:", err);
       toast.error(t("toast.personDeleteFailed"), {
@@ -1267,9 +1285,24 @@ function RelDeleteBtn({
     if (!confirm(t("rel.confirmDelete"))) return;
     setBusy(true);
     try {
-      await deleteRelationship(source, target);
+      const deleted = await deleteRelationship(source, target);
       onDeleted();
-      toast.success(t("toast.relationshipDeleted"));
+      toast.success(t("toast.relationshipDeleted"), {
+        duration: 10000,
+        action: {
+          label: t("toast.undo"),
+          onClick: async () => {
+            try {
+              await rollbackHistory(deleted.revision_id);
+              onDeleted();
+              toast.success(t("toast.changeUndone"));
+            } catch (err) {
+              console.error("Undo relationship deletion failed:", err);
+              toast.error(t("toast.undoFailed"));
+            }
+          },
+        },
+      });
     } catch (err) {
       console.error("Delete failed:", err);
       toast.error(t("toast.relationshipDeleteFailed"), {

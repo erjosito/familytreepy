@@ -200,7 +200,7 @@ const translations = {
     "person.noPictures": "No pictures yet",
 
     // Admin page
-    "admin.title": "User Management",
+    "admin.title": "Administration",
     "admin.loading": "Loading...",
     "admin.email": "Email",
     "admin.role": "Role",
@@ -217,11 +217,41 @@ const translations = {
     "admin.confirmRemove": "Remove user",
     "admin.roleUser": "user",
     "admin.roleAdmin": "admin",
+    "history.title": "Change history",
+    "history.description": "Review who changed people and relationships, inspect before/after values, and safely roll back compatible revisions.",
+    "history.actor": "Actor",
+    "history.operation": "Operation",
+    "history.entityType": "Entity type",
+    "history.entity": "Person or entity ID",
+    "history.from": "From",
+    "history.to": "To",
+    "history.all": "All",
+    "history.person": "Person",
+    "history.relationship": "Relationship",
+    "history.filter": "Apply filters",
+    "history.clear": "Clear",
+    "history.loading": "Loading history...",
+    "history.empty": "No matching changes",
+    "history.details": "Before and after details",
+    "history.before": "Before",
+    "history.after": "After",
+    "history.rollback": "Roll back",
+    "history.rollingBack": "Rolling back...",
+    "history.confirmRollback": "Roll back this change? A new compensating revision will be recorded.",
+    "history.operationCreate": "Created",
+    "history.operationUpdate": "Updated",
+    "history.operationDelete": "Deleted",
+    "history.operationDeactivate": "Deactivated",
+    "history.operationReactivate": "Reactivated",
+    "history.operationRollback": "Rolled back",
 
     // Notifications
     "toast.notifications": "Notifications",
     "toast.dismiss": "Dismiss notification",
     "toast.retry": "Retry",
+    "toast.undo": "Undo",
+    "toast.changeUndone": "Change undone",
+    "toast.undoFailed": "Could not undo the change",
     "toast.personCreated": "Person created",
     "toast.personSaved": "Person saved",
     "toast.personDeleted": "Person deleted",
@@ -513,7 +543,7 @@ const translations = {
     "person.noPictures": "Aún no hay fotos",
 
     // Admin page
-    "admin.title": "Gestión de Usuarios",
+    "admin.title": "Administración",
     "admin.loading": "Cargando...",
     "admin.email": "Email",
     "admin.role": "Rol",
@@ -530,11 +560,41 @@ const translations = {
     "admin.confirmRemove": "Eliminar usuario",
     "admin.roleAdmin": "admin",
     "admin.roleUser": "usuario",
+    "history.title": "Historial de cambios",
+    "history.description": "Revisa quién cambió personas y relaciones, consulta los valores anteriores y posteriores, y revierte revisiones compatibles de forma segura.",
+    "history.actor": "Autor",
+    "history.operation": "Operación",
+    "history.entityType": "Tipo de entidad",
+    "history.entity": "Persona o ID de entidad",
+    "history.from": "Desde",
+    "history.to": "Hasta",
+    "history.all": "Todos",
+    "history.person": "Persona",
+    "history.relationship": "Relación",
+    "history.filter": "Aplicar filtros",
+    "history.clear": "Limpiar",
+    "history.loading": "Cargando historial...",
+    "history.empty": "No hay cambios coincidentes",
+    "history.details": "Detalles anteriores y posteriores",
+    "history.before": "Antes",
+    "history.after": "Después",
+    "history.rollback": "Revertir",
+    "history.rollingBack": "Revirtiendo...",
+    "history.confirmRollback": "¿Revertir este cambio? Se registrará una nueva revisión compensatoria.",
+    "history.operationCreate": "Creada",
+    "history.operationUpdate": "Actualizada",
+    "history.operationDelete": "Eliminada",
+    "history.operationDeactivate": "Desactivada",
+    "history.operationReactivate": "Reactivada",
+    "history.operationRollback": "Revertida",
 
     // Notifications
     "toast.notifications": "Notificaciones",
     "toast.dismiss": "Cerrar notificación",
     "toast.retry": "Reintentar",
+    "toast.undo": "Deshacer",
+    "toast.changeUndone": "Cambio deshecho",
+    "toast.undoFailed": "No se pudo deshacer el cambio",
     "toast.personCreated": "Persona creada",
     "toast.personSaved": "Persona guardada",
     "toast.personDeleted": "Persona eliminada",
@@ -649,7 +709,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // Sync from localStorage after mount to avoid SSR hydration mismatch
   useEffect(() => {
     const saved = localStorage.getItem("locale") as Locale;
-    if (saved === "en" || saved === "es") setLocaleState(saved);
+    if (saved !== "en" && saved !== "es") return;
+    const timeout = window.setTimeout(() => setLocaleState(saved), 0);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   const setLocale = useCallback((l: Locale) => {

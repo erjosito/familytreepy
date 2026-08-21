@@ -54,12 +54,15 @@ Access at `http://localhost:3000`. API docs at `http://localhost:8000/docs`.
 |----------|----------|-------------|---------|
 | `TREE_BACKEND` | No | Storage backend: `local` or `azstorage` | `local` |
 | `TREE_LOCAL_FILE` | For local | Path to GML file | `familytree.gml` |
+| `HISTORY_LOCAL_FILE` | No | Append-only local change journal | `<TREE_LOCAL_FILE>.history.jsonl` |
+| `HISTORY_ROLLBACK_DAYS` | No | Number of days a compatible revision can be undone | `30` |
 | `CORS_ORIGINS` | No | Allowed CORS origins (comma-separated) | `http://localhost:3000` |
 | **Azure Storage** | | | |
 | `AZURE_STORAGE_ACCOUNT` | For azstorage | Storage account name | — |
 | `AZURE_STORAGE_KEY` | For azstorage | Storage account key | — |
 | `AZURE_STORAGE_CONTAINER` | For azstorage | Container for GML file | `familytreejson` |
 | `AZURE_STORAGE_BLOB` | For azstorage | Blob name for GML file | `familytree.gml` |
+| `AZURE_HISTORY_BLOB` | No | Append blob for the change journal | `<AZURE_STORAGE_BLOB>.history.jsonl` |
 | `AZURE_STORAGE_PICS_CONTAINER` | For images | Container for profile pictures | `familytreepics` |
 | **Authentication** | | | |
 | `AZURE_AD_TENANT_ID` | For auth | Entra External ID tenant ID | — (dev mode if unset) |
@@ -135,6 +138,24 @@ or a relationship event outside a recorded lifetime—are returned as warnings
 that the user must explicitly review and override. Creating a person together
 with their initial relationships is transactional, so a warning or error does
 not leave a partial record behind.
+
+## Change history and rollback
+
+Authenticated person and relationship mutations are written to an append-only
+JSONL journal with the actor, UTC timestamp, operation, entity ID, and complete
+before/after snapshots. Local trees use a sidecar file; Azure Storage trees use
+an append blob in the same container.
+
+Administrators can filter and inspect revisions on the Administration page.
+Deletion removes the entity from the active graph but retains a recoverable
+tombstone in the journal, and destructive UI actions provide an immediate
+**Undo** option. Rollback never rewrites history: it creates a compensating
+revision and succeeds only when the entity still matches the original
+post-change snapshot. This prevents rollback from overwriting later edits.
+Compatible revisions expire after `HISTORY_ROLLBACK_DAYS` (30 days by default).
+Journal retention should be set on the storage account or filesystem according
+to the deployment's privacy policy; deleting the journal permanently removes
+the retained tombstones.
 
 ## CLI Tool
 
