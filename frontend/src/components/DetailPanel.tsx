@@ -3,13 +3,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { PersonNode, GraphEdge } from "@/lib/types";
-import { updatePerson, uploadProfilePic, uploadPicture, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, deleteRelationship, rollbackHistory, getNotes, addNote, deleteNote, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
+import { updatePerson, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, deleteRelationship, rollbackHistory, getNotes, addNote, deleteNote, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
 import { formatDate, formatTimestamp } from "@/lib/dateUtils";
 import { useToast } from "@/components/ToastProvider";
 import type { PersonActionDefinition } from "@/lib/personActions";
 import ValidationMessages from "@/components/ValidationMessages";
+import { PhotoPicker, ProfilePhotoCrop, UploadProgress } from "@/components/PhotoTools";
+import type { PreparedPhoto } from "@/lib/photoProcessing";
+import { uploadPhotoWithProgress } from "@/lib/photoUpload";
 
 interface Props {
   person: PersonNode | null;
@@ -47,7 +50,7 @@ export default function DetailPanel({
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
-  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropPhoto, setCropPhoto] = useState<PreparedPhoto | null>(null);
   const [removingProfilePic, setRemovingProfilePic] = useState(false);
 
   // Reset edit mode when the selected person changes
@@ -56,7 +59,7 @@ export default function DetailPanel({
     setEditing(false);
     setDraft({});
     setValidationIssues([]);
-    setCropSrc(null);
+    setCropPhoto(null);
   }, [personId]);
 
   if (!person) {
@@ -91,7 +94,7 @@ export default function DetailPanel({
   const cancelEdit = () => {
     setEditing(false);
     setValidationIssues([]);
-    setCropSrc(null);
+    setCropPhoto(null);
   };
 
   const saveEdit = async (overrideWarnings = false) => {
@@ -144,15 +147,6 @@ export default function DetailPanel({
   };
 
   // --- Profile picture upload / crop ---
-  const handlePicSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setCropSrc(reader.result as string);
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
-
   return (
     <div className="p-4 space-y-4 overflow-y-auto h-full">
       {/* Header */}
@@ -215,10 +209,7 @@ export default function DetailPanel({
         )}
         {editing && (
           <div className="flex flex-col gap-1">
-            <label className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer text-center">
-              {t("detail.changePhoto")}
-              <input type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff" className="hidden" onChange={handlePicSelected} />
-            </label>
+            <PhotoPicker compact onSelected={setCropPhoto} />
             {person.profilepic && (
               <button
                 onClick={removeProfilePic}
@@ -233,15 +224,15 @@ export default function DetailPanel({
       </div>
 
       {/* Crop modal */}
-      {cropSrc && (
-        <CropUploader
-          src={cropSrc}
+      {cropPhoto && (
+        <ProfilePhotoCrop
+          photo={cropPhoto}
           personId={person.id}
           onDone={() => {
-            setCropSrc(null);
+            setCropPhoto(null);
             onPersonUpdated?.();
           }}
-          onCancel={() => setCropSrc(null)}
+          onCancel={() => setCropPhoto(null)}
         />
       )}
 
@@ -503,163 +494,6 @@ function Field({
 }
 
 /* ------------------------------------------------------------------ */
-/* Profile picture crop & upload                                       */
-/* ------------------------------------------------------------------ */
-function CropUploader({
-  src,
-  personId,
-  onDone,
-  onCancel,
-}: {
-  src: string;
-  personId: string;
-  onDone: () => void;
-  onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const toast = useToast();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [uploading, setUploading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const cropSize = 200;
-
-  const draw = useCallback(() => {
-    const ctx = canvasRef.current?.getContext("2d");
-    const img = imgRef.current;
-    if (!ctx || !img) return;
-    ctx.clearRect(0, 0, cropSize, cropSize);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cropSize / 2, cropSize / 2, cropSize / 2, 0, Math.PI * 2);
-    ctx.clip();
-    const scale = zoom;
-    const w = img.naturalWidth * scale;
-    const h = img.naturalHeight * scale;
-    ctx.drawImage(img, offset.x + (cropSize - w) / 2, offset.y + (cropSize - h) / 2, w, h);
-    ctx.restore();
-    // circle border
-    ctx.beginPath();
-    ctx.arc(cropSize / 2, cropSize / 2, cropSize / 2 - 1, 0, Math.PI * 2);
-    ctx.strokeStyle = "#3b82f6";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }, [offset, zoom, cropSize]);
-
-  const handleLoad = () => {
-    const img = imgRef.current!;
-    // Auto-zoom to fit the crop area
-    const fitScale = cropSize / Math.min(img.naturalWidth, img.naturalHeight);
-    setZoom(fitScale);
-    setLoaded(true);
-  };
-
-  // Redraw whenever offset/zoom changes
-  if (loaded) {
-    // Use requestAnimationFrame to draw after state updates
-    requestAnimationFrame(draw);
-  }
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startOff = { ...offset };
-    const onMove = (ev: MouseEvent) => {
-      setOffset({ x: startOff.x + (ev.clientX - startX), y: startOff.y + (ev.clientY - startY) });
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  const handleUpload = async () => {
-    const ctx = canvasRef.current?.getContext("2d");
-    if (!ctx) return;
-    // Render final 400×400 version
-    const out = document.createElement("canvas");
-    out.width = 400;
-    out.height = 400;
-    const outCtx = out.getContext("2d")!;
-    outCtx.drawImage(canvasRef.current!, 0, 0, cropSize, cropSize, 0, 0, 400, 400);
-    out.toBlob(async (blob) => {
-      if (!blob) return;
-      setUploading(true);
-      try {
-        await uploadProfilePic(personId, blob, "profile.jpg");
-        toast.success(t("toast.photoUpdated"));
-        onDone();
-      } catch (err) {
-        console.error("Upload failed:", err);
-        toast.error(t("toast.photoUploadFailed"));
-      } finally {
-        setUploading(false);
-      }
-    }, "image/jpeg", 0.9);
-  };
-
-  return (
-    <div className="border rounded-lg p-3 bg-gray-50 space-y-3">
-      <p className="text-xs text-gray-500 font-medium">{t("pic.dragHint")}</p>
-      {/* Hidden img for loading */}
-      <img
-        ref={imgRef}
-        src={src}
-        alt=""
-        className="hidden"
-        onLoad={handleLoad}
-      />
-      <div className="flex justify-center">
-        <canvas
-          ref={canvasRef}
-          width={cropSize}
-          height={cropSize}
-          className="rounded-full cursor-move border-2 border-gray-300"
-          onMouseDown={handleMouseDown}
-          onWheel={(e) => {
-            e.preventDefault();
-            setZoom((z) => Math.max(0.1, z + (e.deltaY < 0 ? 0.05 : -0.05)));
-          }}
-        />
-      </div>
-      <div className="flex items-center gap-2 text-xs text-gray-500">
-        <span>−</span>
-        <input
-          type="range"
-          min={0.1}
-          max={3}
-          step={0.01}
-          value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
-          className="flex-1"
-        />
-        <span>+</span>
-      </div>
-      <div className="flex gap-2">
-        <button
-          onClick={handleUpload}
-          disabled={uploading}
-          className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
-        >
-          {uploading ? t("pic.uploading") : t("pic.uploadBtn")}
-        </button>
-        <button
-          onClick={onCancel}
-          disabled={uploading}
-          className="px-3 py-1 border text-xs rounded hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {t("pic.cancel")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Pictures gallery with upload + tagging                              */
 /* ------------------------------------------------------------------ */
 function PicturesGallery({
@@ -677,44 +511,71 @@ function PicturesGallery({
 }) {
   const { t } = useI18n();
   const toast = useToast();
-  const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<{ file: File; dataUrl: string } | null>(null);
+  const [preview, setPreview] = useState<PreparedPhoto | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadFailed, setUploadFailed] = useState(false);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const uploadAbort = useRef<AbortController | null>(null);
   const [taggedIds, setTaggedIds] = useState<string[]>([]);
   const [removing, setRemoving] = useState<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const pics = person.pictures && person.pictures.length > 0 ? person.pictures : [];
 
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPreview({ file, dataUrl: reader.result as string });
-    reader.readAsDataURL(file);
-    e.target.value = "";
+  const handleSelected = (photo: PreparedPhoto) => {
+    if (preview) URL.revokeObjectURL(preview.previewUrl);
+    setPreview(photo);
     setTaggedIds([]);
+    setUploadFailed(false);
+    setUploadedUrl(null);
   };
 
   const handleUpload = async () => {
     if (!preview) return;
-    setUploading(true);
+    const controller = new AbortController();
+    uploadAbort.current = controller;
+    setUploadFailed(false);
+    setUploadProgress(uploadedUrl ? 100 : 0);
     try {
-      const result = await uploadPicture(person.id, preview.file, preview.file.name);
+      let pictureUrl = uploadedUrl;
+      if (!pictureUrl) {
+        const result = await uploadPhotoWithProgress(
+          person.id,
+          "pictures",
+          preview.file,
+          preview.file.name,
+          preview.uploadId,
+          setUploadProgress,
+          controller.signal,
+        );
+        pictureUrl = result.url;
+        setUploadedUrl(pictureUrl);
+      }
       // Tag other people
       if (taggedIds.length > 0) {
-        await tagPicture(person.id, result.url, taggedIds);
+        await tagPicture(person.id, pictureUrl, taggedIds);
       }
+      URL.revokeObjectURL(preview.previewUrl);
       setPreview(null);
+      setUploadedUrl(null);
       setTaggedIds([]);
       onUpdated?.();
       toast.success(t("toast.photoUploaded"));
     } catch (err) {
-      console.error("Upload failed:", err);
-      toast.error(t("toast.photoUploadFailed"));
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        console.error("Upload failed:", err);
+        setUploadFailed(true);
+        toast.error(t("toast.photoUploadFailed"));
+      }
     } finally {
-      setUploading(false);
+      setUploadProgress(null);
     }
   };
+
+  useEffect(() => () => {
+    uploadAbort.current?.abort();
+    if (preview) URL.revokeObjectURL(preview.previewUrl);
+  }, [preview]);
 
   const handleRemove = async (url: string) => {
     setRemoving(url);
@@ -746,17 +607,14 @@ function PicturesGallery({
           {t("pic.title")} {pics.length > 0 && <span className="text-gray-400 normal-case">({pics.length})</span>}
         </h3>
         {!preview && (
-          <label className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer">
-            {t("pic.addPhoto")}
-            <input type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff" className="hidden" onChange={handleFileSelected} />
-          </label>
+          <PhotoPicker compact onSelected={handleSelected} />
         )}
       </div>
 
       {/* Upload preview + tagging */}
       {preview && (
         <div className="border rounded-lg p-3 bg-gray-50 space-y-3 mb-3">
-          <img src={preview.dataUrl} alt="Preview" className="rounded border max-h-40 w-full object-contain" />
+          <img src={preview.previewUrl} alt={t("pic.previewAlt")} className="rounded border max-h-40 w-full object-contain" />
 
           {/* Tag people */}
           {taggable.length > 0 && (
@@ -770,19 +628,29 @@ function PicturesGallery({
           <div className="flex gap-2">
             <button
               onClick={handleUpload}
-              disabled={uploading}
+              disabled={uploadProgress !== null}
               className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
             >
-              {uploading ? t("pic.uploading") : t("pic.upload")}
+              {uploadProgress !== null ? t("pic.uploading") : t("pic.upload")}
             </button>
             <button
-              onClick={() => { setPreview(null); setTaggedIds([]); }}
-              disabled={uploading}
+              onClick={() => {
+                URL.revokeObjectURL(preview.previewUrl);
+                setPreview(null);
+                setTaggedIds([]);
+              }}
+              disabled={uploadProgress !== null}
               className="px-3 py-1 border text-xs rounded hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("pic.cancel")}
             </button>
           </div>
+          <UploadProgress
+            progress={uploadProgress}
+            error={uploadFailed}
+            onCancel={() => uploadAbort.current?.abort()}
+            onRetry={handleUpload}
+          />
         </div>
       )}
 

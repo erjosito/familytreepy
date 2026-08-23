@@ -5,6 +5,7 @@ import { listUsers, addUser, updateUser, deleteUser } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ToastProvider";
 import ChangeHistoryPanel from "@/components/ChangeHistoryPanel";
+import PersonMergePanel from "@/components/PersonMergePanel";
 
 interface User {
   email: string;
@@ -265,6 +266,7 @@ export default function AdminPage() {
           </form>
         </div>
 
+        <PersonMergePanel />
         <ChangeHistoryPanel />
       </div>
     </div>

@@ -2,10 +2,14 @@
 
 import os
 import tempfile
+from types import SimpleNamespace
 
+import networkx as nx
 import pytest
+from azure.core import MatchConditions
 
-from familytree import FamilyTree
+import familytree as familytree_module
+from familytree import ConcurrentWriteError, FamilyTree
 from backend.app.schemas.relationship_schema import load_relationship_schema
 from tree_validation import TreeValidationError
 
@@ -21,6 +25,124 @@ def tree(tmp_path, schema):
     """Create a FamilyTree backed by a temp file, cleaned up automatically."""
     local_file = str(tmp_path / "test_tree.gml")
     return FamilyTree(backend="local", localfile=local_file, relationship_schema=schema, autosave=False)
+
+
+def test_azure_save_uses_loaded_etag(monkeypatch, schema):
+    initial = nx.DiGraph()
+    initial.add_node("person-1", firstname="Initial")
+    content = ("\n".join(nx.generate_gml(initial)) + "\n").encode()
+
+    class Downloader:
+        properties = SimpleNamespace(etag='"etag-1"')
+
+        def readall(self):
+            return content
+
+    class BlobClient:
+        def __init__(self):
+            self.upload_options = None
+
+        def download_blob(self):
+            return Downloader()
+
+        def upload_blob(self, _data, **options):
+            self.upload_options = options
+            return {"etag": '"etag-2"'}
+
+    blob_client = BlobClient()
+    service = SimpleNamespace(
+        get_blob_client=lambda **_kwargs: blob_client,
+    )
+    monkeypatch.setattr(
+        familytree_module.BlobServiceClient,
+        "from_connection_string",
+        lambda _connection_string: service,
+    )
+    azure_tree = FamilyTree(
+        backend="azstorage",
+        azstorage_account="account",
+        azstorage_key="key",
+        azstorage_container="container",
+        azstorage_blob="tree.gml",
+        relationship_schema=schema,
+        autosave=False,
+    )
+
+    azure_tree.graph.nodes["person-1"]["firstname"] = "Updated"
+    azure_tree.save()
+
+    assert blob_client.upload_options["etag"] == '"etag-1"'
+    assert blob_client.upload_options["match_condition"] == MatchConditions.IfNotModified
+    assert azure_tree._storage_etag == '"etag-2"'
+
+
+def test_azure_save_surfaces_concurrent_write(monkeypatch, schema):
+    initial = nx.DiGraph()
+    initial.add_node("person-1")
+    content = ("\n".join(nx.generate_gml(initial)) + "\n").encode()
+
+    class Downloader:
+        properties = SimpleNamespace(etag='"etag-1"')
+
+        def readall(self):
+            return content
+
+    class BlobClient:
+        def download_blob(self):
+            return Downloader()
+
+        def upload_blob(self, _data, **_options):
+            raise familytree_module.ResourceModifiedError("stale")
+
+    service = SimpleNamespace(get_blob_client=lambda **_kwargs: BlobClient())
+    monkeypatch.setattr(
+        familytree_module.BlobServiceClient,
+        "from_connection_string",
+        lambda _connection_string: service,
+    )
+    azure_tree = FamilyTree(
+        backend="azstorage",
+        azstorage_account="account",
+        azstorage_key="key",
+        azstorage_container="container",
+        azstorage_blob="tree.gml",
+        relationship_schema=schema,
+        autosave=False,
+    )
+
+    with pytest.raises(ConcurrentWriteError):
+        azure_tree.save()
+
+
+def test_azure_load_failure_never_initializes_empty_tree(monkeypatch, schema):
+    uploads = []
+
+    class BlobClient:
+        def download_blob(self):
+            raise OSError("temporary storage failure")
+
+        def upload_blob(self, *_args, **_kwargs):
+            uploads.append(True)
+
+    service = SimpleNamespace(get_blob_client=lambda **_kwargs: BlobClient())
+    monkeypatch.setattr(
+        familytree_module.BlobServiceClient,
+        "from_connection_string",
+        lambda _connection_string: service,
+    )
+
+    with pytest.raises(OSError, match="temporary storage failure"):
+        FamilyTree(
+            backend="azstorage",
+            azstorage_account="account",
+            azstorage_key="key",
+            azstorage_container="container",
+            azstorage_blob="tree.gml",
+            relationship_schema=schema,
+            autosave=False,
+        )
+
+    assert uploads == []
 
 
 # ------------------------------------------------------------------

@@ -23,6 +23,9 @@ class HistoryNotFoundError(ValueError):
     """Raised when a requested revision does not exist."""
 
 
+_LOCK_CREATION = threading.Lock()
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -88,6 +91,25 @@ def relationship_snapshot(
     return {"edges": edges}
 
 
+def merge_snapshot(tree, source: str, target: str) -> dict[str, Any]:
+    nodes = {}
+    for person_id in (source, target):
+        if person_id in tree.graph:
+            nodes[person_id] = _json_value(dict(tree.graph.nodes[person_id]))
+    edges = []
+    for edge_source, edge_target, attributes in tree.graph.edges(data=True):
+        if source in (edge_source, edge_target) or target in (edge_source, edge_target):
+            edges.append(
+                {
+                    "source": edge_source,
+                    "target": edge_target,
+                    "attributes": _json_value(dict(attributes)),
+                }
+            )
+    edges.sort(key=lambda edge: (edge["source"], edge["target"]))
+    return {"nodes": nodes, "relationships": edges}
+
+
 def entity_snapshot(
     tree,
     entity_type: str,
@@ -106,6 +128,8 @@ def entity_snapshot(
             target,
             include_reverse=include_reverse,
         )
+    if entity_type == "merge" and source and target:
+        return merge_snapshot(tree, source, target)
     raise ValueError(f"Unsupported history entity type: {entity_type}")
 
 
@@ -233,6 +257,43 @@ def apply_audited_change(
     include_reverse: bool = False,
     metadata: dict[str, Any] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
+    mutation_lock = getattr(tree, "_audited_mutation_lock", None)
+    if mutation_lock is None:
+        with _LOCK_CREATION:
+            mutation_lock = getattr(tree, "_audited_mutation_lock", None)
+            if mutation_lock is None:
+                mutation_lock = threading.RLock()
+                tree._audited_mutation_lock = mutation_lock
+    with mutation_lock:
+        return _apply_audited_change_unlocked(
+            tree=tree,
+            store=store,
+            actor=actor,
+            operation=operation,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            mutation=mutation,
+            source=source,
+            target=target,
+            include_reverse=include_reverse,
+            metadata=metadata,
+        )
+
+
+def _apply_audited_change_unlocked(
+    *,
+    tree,
+    store: ChangeHistoryStore,
+    actor: str,
+    operation: str,
+    entity_type: str,
+    entity_id: str,
+    mutation: Callable[[], Any],
+    source: str | None = None,
+    target: str | None = None,
+    include_reverse: bool = False,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[Any, dict[str, Any]]:
     original_graph = copy.deepcopy(tree.graph)
     previous_autosave = tree.autosave
     before = entity_snapshot(
@@ -334,6 +395,24 @@ def _restore_relationship(
         )
 
 
+def _restore_merge(tree, state: dict[str, Any], source: str, target: str) -> None:
+    for person_id in (source, target):
+        if person_id in tree.graph:
+            tree.graph.remove_node(person_id)
+    for person_id, attributes in state["nodes"].items():
+        tree.graph.add_node(person_id, **copy.deepcopy(attributes))
+    for edge in state["relationships"]:
+        if edge["source"] not in tree.graph or edge["target"] not in tree.graph:
+            raise HistoryConflictError(
+                "A person related to this merge was deleted after the revision"
+            )
+        tree.graph.add_edge(
+            edge["source"],
+            edge["target"],
+            **copy.deepcopy(edge["attributes"]),
+        )
+
+
 def rollback_revision(
     *,
     tree,
@@ -380,6 +459,8 @@ def rollback_revision(
                 revision["before"],
                 include_reverse=include_reverse,
             )
+        elif revision["entity_type"] == "merge" and source and target:
+            _restore_merge(tree, revision["before"], source, target)
         else:
             raise ValueError("Revision does not contain rollback metadata")
 

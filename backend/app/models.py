@@ -1,7 +1,7 @@
 """Pydantic models for API requests and responses."""
 
 from typing import Any, Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PersonRelationshipCreate(BaseModel):
@@ -40,6 +40,25 @@ class PersonUpdate(BaseModel):
     pictures: list[str] | None = None
     override_warnings: bool = False
     extra: dict[str, Any] | None = None
+
+
+class DuplicateSuggestionRequest(BaseModel):
+    person_id: str | None = None
+    firstname: str | None = None
+    lastname: str | None = None
+    alias: str | None = None
+    birthdate: str | None = None
+    deathdate: str | None = None
+    relative_ids: list[str] | None = None
+
+
+class PersonMergeRequest(BaseModel):
+    source_id: str
+    target_id: str
+    field_choices: dict[str, Literal["source", "target"]] = Field(default_factory=dict)
+    relationship_choices: dict[str, Literal["source", "target"]] = Field(default_factory=dict)
+    preview_token: str | None = None
+    override_warnings: bool = False
 
 
 class PersonResponse(BaseModel):

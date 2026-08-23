@@ -14,6 +14,7 @@
     "@types/cytoscape": "^3.21.9",
     "cytoscape": "^3.33.1",
     "cytoscape-fcose": "^2.2.0",
+    "heic2any": "^0.0.4",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"

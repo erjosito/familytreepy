@@ -25,6 +25,8 @@ function operationLabel(
       return t("history.operationDeactivate");
     case "reactivate":
       return t("history.operationReactivate");
+    case "merge":
+      return t("history.operationMerge");
     case "rollback":
       return t("history.operationRollback");
     default:
@@ -33,6 +35,9 @@ function operationLabel(
 }
 
 function entityLabel(entry: ChangeHistoryEntry): string {
+  if (entry.entity_type === "merge") {
+    return `${entry.metadata.source || "?"} → ${entry.metadata.target || "?"}`;
+  }
   if (entry.entity_type === "relationship") {
     return `${entry.metadata.source || "?"} → ${entry.metadata.target || "?"}`;
   }

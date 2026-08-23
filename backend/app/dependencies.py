@@ -32,7 +32,7 @@ _history_instance: ChangeHistoryStore | None = None
 
 
 def get_tree() -> FamilyTree:
-    """Return the singleton FamilyTree instance, creating it on first call."""
+    """Return a request-consistent tree, refreshed from shared storage when needed."""
     global _tree_instance
     if _tree_instance is None:
         backend = os.getenv("TREE_BACKEND", "local")
@@ -53,7 +53,10 @@ def get_tree() -> FamilyTree:
                 localfile=local_path,
                 relationship_schema=schema,
             )
-    return _tree_instance
+    with _tree_instance._audited_mutation_lock:
+        if _tree_instance.backend == "azstorage" and not _tree_instance.load_azstorage():
+            raise RuntimeError("Could not refresh the family tree from Azure Storage")
+        return _tree_instance
 
 
 def get_history_store() -> ChangeHistoryStore:

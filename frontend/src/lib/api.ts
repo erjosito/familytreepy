@@ -16,7 +16,7 @@ export interface ChangeHistoryEntry {
   timestamp: string;
   actor: string;
   operation: string;
-  entity_type: "person" | "relationship";
+  entity_type: "person" | "relationship" | "merge";
   entity_id: string;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
@@ -27,6 +27,52 @@ export interface ChangeHistoryEntry {
   };
   expires_at: string;
   can_rollback: boolean;
+}
+
+export interface DuplicateReason {
+  code: string;
+  value?: string;
+  person_ids?: string[];
+}
+
+export interface DuplicateSuggestion {
+  person_id: string;
+  fullname: string;
+  score: number;
+  reasons: DuplicateReason[];
+}
+
+export interface MergeConflict {
+  field: string;
+  source: unknown;
+  target: unknown;
+  choice?: "source" | "target";
+  resolved: boolean;
+}
+
+export interface RelationshipMergeConflict {
+  key: string;
+  source: Record<string, unknown>;
+  target: Record<string, unknown>;
+  choice?: "source" | "target";
+  resolved: boolean;
+}
+
+export interface MergePreview {
+  source_id: string;
+  target_id: string;
+  preview_token: string;
+  field_conflicts: MergeConflict[];
+  relationship_conflicts: RelationshipMergeConflict[];
+  retained: Record<string, unknown>;
+  notes: unknown[];
+  pictures: string[];
+  relationships: {
+    repointed: unknown[];
+    self_links_removed: unknown[];
+    duplicates_removed: unknown[];
+    final: unknown[];
+  };
 }
 
 interface ValidationDetail {
@@ -169,6 +215,53 @@ export async function updatePerson(
 
 export async function deletePerson(personId: string): Promise<{ id: string; deleted: boolean; revision_id: string }> {
   const res = await apiFetch(`/api/persons/${personId}`, { method: "DELETE" });
+  return res.json();
+}
+
+export async function suggestDuplicates(
+  data: Record<string, unknown>,
+  personId?: string,
+  relativeIds: string[] = [],
+): Promise<DuplicateSuggestion[]> {
+  const res = await apiFetch("/api/persons/duplicate-suggestions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...data,
+      person_id: personId,
+      relative_ids: relativeIds,
+    }),
+  });
+  const payload = await res.json() as { suggestions: DuplicateSuggestion[] };
+  return payload.suggestions;
+}
+
+export interface MergeRequest {
+  source_id: string;
+  target_id: string;
+  field_choices?: Record<string, "source" | "target">;
+  relationship_choices?: Record<string, "source" | "target">;
+  preview_token?: string;
+  override_warnings?: boolean;
+}
+
+export async function previewPersonMerge(data: MergeRequest): Promise<MergePreview> {
+  const res = await apiFetch("/api/persons/merge/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function mergePersons(
+  data: MergeRequest,
+): Promise<{ source_id: string; target_id: string; merged: boolean; revision_id: string }> {
+  const res = await apiFetch("/api/persons/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
   return res.json();
 }
 

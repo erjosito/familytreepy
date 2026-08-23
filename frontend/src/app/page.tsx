@@ -560,6 +560,17 @@ export default function ExplorePage() {
                 initialData={formMode.type === "edit" && selectedPerson ? Object.fromEntries(
                   Object.entries(selectedPerson).filter(([k]) => !["id", "fullname", "relationships", "siblings"].includes(k))
                 ) : {}}
+                personId={formMode.type === "edit" ? formMode.nodeId : undefined}
+                relativeIds={
+                  formMode.type === "edit"
+                    ? []
+                    : [
+                        formMode.nodeId,
+                        ...(formMode.type === "add_child" && otherParentId
+                          ? [otherParentId]
+                          : []),
+                      ]
+                }
                 title={
                   formMode.type === "edit" ? t("form.editPerson") :
                   formMode.type === "add_child" ? t("form.addChild") :

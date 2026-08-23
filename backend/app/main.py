@@ -4,13 +4,15 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from backend.app.routers import persons, relationships, graph, auth_router, geni, history
+from familytree import ConcurrentWriteError
 
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.8.0"
 
 app = FastAPI(
     title="Family Tree API",
@@ -21,6 +23,10 @@ app = FastAPI(
 # Rate limiting
 app.state.limiter = auth_router.limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(
+    ConcurrentWriteError,
+    lambda _request, exc: JSONResponse(status_code=409, content={"detail": str(exc)}),
+)
 
 app.add_middleware(
     CORSMiddleware,
