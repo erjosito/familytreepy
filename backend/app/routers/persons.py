@@ -2,11 +2,23 @@
 
 import os
 import uuid
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
-from backend.app.models import PersonCreate, PersonUpdate, PersonResponse
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Header
+from backend.app.models import (
+    DuplicateSuggestionRequest,
+    PersonCreate,
+    PersonMergeRequest,
+    PersonUpdate,
+    PersonResponse,
+)
 from backend.app.change_history import ChangeHistoryStore, apply_audited_change
+from backend.app.person_merge import (
+    build_merge_preview,
+    duplicate_suggestions,
+    execute_merge,
+)
 from backend.app.dependencies import get_history_store, get_tree
 from backend.app.auth import require_auth
+from familytree import ConcurrentWriteError
 from tree_validation import (
     TreeValidationError,
     enforce_issues,
@@ -62,6 +74,13 @@ async def _validate_image_upload(file: UploadFile) -> bytes:
     return content
 
 
+def _delete_failed_upload(blob_client, commit_error: Exception) -> None:
+    try:
+        blob_client.delete_blob(delete_snapshots="include")
+    except Exception as cleanup_error:
+        commit_error.add_note(f"Uploaded blob cleanup also failed: {cleanup_error}")
+
+
 @router.get("", response_model=list[dict])
 def list_persons(tree=Depends(get_tree)):
     """List all persons with fields needed by selectors and search."""
@@ -71,6 +90,115 @@ def list_persons(tree=Depends(get_tree)):
         fullname = (data.get("firstname", "") + " " + data.get("lastname", "")).strip()
         result.append({"id": node_id, "fullname": fullname, "alias": data.get("alias", "")})
     return result
+
+
+@router.post("/duplicate-suggestions")
+def suggest_duplicates(body: DuplicateSuggestionRequest, tree=Depends(get_tree)):
+    """Return ranked, explainable duplicate candidates without blocking writes."""
+    candidate = body.model_dump(exclude={"person_id", "relative_ids"}, exclude_none=True)
+    if body.person_id and body.person_id in tree.graph:
+        current = dict(tree.graph.nodes[body.person_id])
+        current.update(candidate)
+        candidate = current
+    return {
+        "suggestions": duplicate_suggestions(
+            tree.graph,
+            candidate,
+            person_id=body.person_id,
+            relative_ids=body.relative_ids,
+        )
+    }
+
+
+@router.post("/merge/preview")
+def preview_person_merge(
+    body: PersonMergeRequest,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+):
+    """Preview every retained value and graph effect of a merge."""
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        return build_merge_preview(
+            tree,
+            body.source_id,
+            body.target_id,
+            field_choices=body.field_choices,
+            relationship_choices=body.relationship_choices,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/merge")
+def merge_persons(
+    body: PersonMergeRequest,
+    tree=Depends(get_tree),
+    user=Depends(require_auth),
+    history: ChangeHistoryStore = Depends(get_history_store),
+):
+    """Merge source into target atomically and append one auditable revision."""
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if not body.preview_token:
+        raise HTTPException(
+            status_code=400,
+            detail="preview_token is required; preview the merge before execution",
+        )
+    try:
+        def perform_merge():
+            current_preview = build_merge_preview(
+                tree,
+                body.source_id,
+                body.target_id,
+                field_choices=body.field_choices,
+                relationship_choices=body.relationship_choices,
+            )
+            execute_merge(
+                tree,
+                current_preview,
+                preview_token=body.preview_token,
+                override_warnings=body.override_warnings,
+            )
+
+        _, revision = apply_audited_change(
+            tree=tree,
+            store=history,
+            actor=_actor(user),
+            operation="merge",
+            entity_type="merge",
+            entity_id=f"{body.source_id}:{body.target_id}",
+            source=body.source_id,
+            target=body.target_id,
+            metadata={
+                "source": body.source_id,
+                "target": body.target_id,
+                "field_choices": body.field_choices,
+                "relationship_choices": body.relationship_choices,
+                "provenance": {
+                    "source_id": body.source_id,
+                    "target_id": body.target_id,
+                },
+            },
+            mutation=perform_merge,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TreeValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.to_detail()) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "source_id": body.source_id,
+        "target_id": body.target_id,
+        "merged": True,
+        "revision_id": revision["id"],
+    }
+
+
+def _is_admin(user: dict) -> bool:
+    return user.get("role") == "admin" or "admin" in user.get("roles", [])
 
 
 @router.get("/{person_id}")
@@ -110,6 +238,16 @@ def create_person(
     person_id = str(uuid.uuid4())
     while person_id in tree.graph:
         person_id = str(uuid.uuid4())
+    suggestions = duplicate_suggestions(
+        tree.graph,
+        attrs,
+        relative_ids=list(
+            dict.fromkeys(
+                relationship.related_person_id
+                for relationship in body.relationships or []
+            )
+        ),
+    )
 
     try:
         staged_graph = tree.graph.copy()
@@ -169,7 +307,11 @@ def create_person(
         raise HTTPException(status_code=422, detail=exc.to_detail()) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"id": person_id, "revision_id": revision["id"]}
+    return {
+        "id": person_id,
+        "revision_id": revision["id"],
+        "duplicate_suggestions": suggestions,
+    }
 
 
 @router.put("/{person_id}")
@@ -198,6 +340,15 @@ def update_person(
     # Handle field clearing: empty string means delete the attribute
     clear_fields = {key for key, value in attrs.items() if value == ""}
     attrs = {key: value for key, value in attrs.items() if key not in clear_fields}
+    prospective = dict(tree.graph.nodes[person_id])
+    for field in clear_fields:
+        prospective.pop(field, None)
+    prospective.update(attrs)
+    suggestions = duplicate_suggestions(
+        tree.graph,
+        prospective,
+        person_id=person_id,
+    )
     try:
         _, revision = apply_audited_change(
             tree=tree,
@@ -215,13 +366,19 @@ def update_person(
         )
     except TreeValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.to_detail()) from exc
-    return {"id": person_id, "updated": True, "revision_id": revision["id"]}
+    return {
+        "id": person_id,
+        "updated": True,
+        "revision_id": revision["id"],
+        "duplicate_suggestions": suggestions,
+    }
 
 
 @router.post("/{person_id}/profilepic")
 async def upload_profile_pic(
     person_id: str,
     file: UploadFile = File(...),
+    upload_id: str | None = Header(default=None, alias="X-Upload-Id"),
     tree=Depends(get_tree),
     user=Depends(require_auth),
     history: ChangeHistoryStore = Depends(get_history_store),
@@ -243,22 +400,34 @@ async def upload_profile_pic(
         from azure.storage.blob import BlobServiceClient
 
         ext = os.path.splitext(file.filename or ".jpg")[1] or ".jpg"
-        blob_name = f"{uuid.uuid4()}{ext}"
+        try:
+            stable_upload_id = str(uuid.UUID(upload_id)) if upload_id else str(uuid.uuid4())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid X-Upload-Id") from exc
+        blob_name = f"{person_id}/profilepic/{stable_upload_id}{ext}"
         conn_str = f"DefaultEndpointsProtocol=https;AccountName={account};AccountKey={key}"
         blob_client = BlobServiceClient.from_connection_string(conn_str).get_blob_client(
             container=container, blob=blob_name
         )
         blob_client.upload_blob(content, overwrite=True)
         blob_url = f"https://{account}.blob.core.windows.net/{container}/{blob_name}"
-        revision = _audit_person_change(
-            tree=tree,
-            history=history,
-            user=user,
-            person_id=person_id,
-            mutation=lambda: tree.add_profile_picture(person_id, blob_url),
-            change="profile_picture",
-        )
+        try:
+            revision = _audit_person_change(
+                tree=tree,
+                history=history,
+                user=user,
+                person_id=person_id,
+                mutation=lambda: tree.add_profile_picture(person_id, blob_url),
+                change="profile_picture",
+            )
+        except Exception as commit_error:
+            _delete_failed_upload(blob_client, commit_error)
+            raise
         return {"url": blob_url, "revision_id": revision["id"]}
+    except HTTPException:
+        raise
+    except ConcurrentWriteError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
 
@@ -267,6 +436,7 @@ async def upload_profile_pic(
 async def upload_picture(
     person_id: str,
     file: UploadFile = File(...),
+    upload_id: str | None = Header(default=None, alias="X-Upload-Id"),
     tree=Depends(get_tree),
     user=Depends(require_auth),
     history: ChangeHistoryStore = Depends(get_history_store),
@@ -291,22 +461,34 @@ async def upload_picture(
         from azure.storage.blob import BlobServiceClient
 
         ext = os.path.splitext(file.filename or ".jpg")[1] or ".jpg"
-        blob_name = f"{uuid.uuid4()}{ext}"
+        try:
+            stable_upload_id = str(uuid.UUID(upload_id)) if upload_id else str(uuid.uuid4())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid X-Upload-Id") from exc
+        blob_name = f"{person_id}/pictures/{stable_upload_id}{ext}"
         conn_str = f"DefaultEndpointsProtocol=https;AccountName={account};AccountKey={key}"
         blob_client = BlobServiceClient.from_connection_string(conn_str).get_blob_client(
             container=container, blob=blob_name
         )
         blob_client.upload_blob(content, overwrite=True)
         blob_url = f"https://{account}.blob.core.windows.net/{container}/{blob_name}"
-        revision = _audit_person_change(
-            tree=tree,
-            history=history,
-            user=user,
-            person_id=person_id,
-            mutation=lambda: tree.add_picture(person_id, blob_url),
-            change="picture_added",
-        )
+        try:
+            revision = _audit_person_change(
+                tree=tree,
+                history=history,
+                user=user,
+                person_id=person_id,
+                mutation=lambda: tree.add_picture(person_id, blob_url),
+                change="picture_added",
+            )
+        except Exception as commit_error:
+            _delete_failed_upload(blob_client, commit_error)
+            raise
         return {"url": blob_url, "revision_id": revision["id"]}
+    except HTTPException:
+        raise
+    except ConcurrentWriteError:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
 

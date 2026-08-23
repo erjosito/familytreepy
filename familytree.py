@@ -3,7 +3,14 @@ import uuid
 import os
 import json
 import tempfile
+import threading
 from gremlin_python.driver import client, serializer
+from azure.core import MatchConditions
+from azure.core.exceptions import (
+    ResourceExistsError,
+    ResourceModifiedError,
+    ResourceNotFoundError,
+)
 from azure.storage.blob import BlobServiceClient
 from tree_validation import (
     enforce_issues,
@@ -11,6 +18,10 @@ from tree_validation import (
     validate_person_relationships,
     validate_relationship,
 )
+
+
+class ConcurrentWriteError(RuntimeError):
+    """Raised when shared tree storage changed after this request loaded it."""
 
 
 class FamilyTree:
@@ -37,6 +48,8 @@ class FamilyTree:
         self.cosmosdb_key = cosmosdb_key
         self.autosave = autosave
         self.relationship_schema = relationship_schema
+        self._storage_etag = None
+        self._audited_mutation_lock = threading.RLock()
         if self.backend == "local" and len(self.localfile) > 0:
             self.tempfile = os.path.splitext(self.localfile)[0] + "_temp" + os.path.splitext(self.localfile)[1]
         # Create new graph or load it
@@ -61,12 +74,9 @@ class FamilyTree:
                 if verbose:
                     print("DEBUG: Graph loaded successfully")
             else:
-                # Error loading Azure Storage file, initializing empty graph
+                # A confirmed missing blob is initialized exactly once.
                 self.graph = nx.DiGraph()
-                try:
-                    self.save_azstorage()
-                except Exception as e:
-                    print(f"Error saving Azure Storage file: {e}")
+                self.save_azstorage()
         elif self.backend == 'cosmosdb':
             self.load_cosmosdb()
         elif self.backend == 'cosmosdb':
@@ -122,12 +132,24 @@ class FamilyTree:
             blob_client = blob_service_client.get_blob_client(container=self.azstorage_container, blob=self.azstorage_blob)
             temp_dir = tempfile.TemporaryDirectory()
             temp_file = os.path.join(temp_dir.name, "graph.gml")
-            try:
-                nx.write_gml(self.graph, temp_file)
-                with open(temp_file, "rb") as data:
-                    blob_client.upload_blob(data, overwrite=True)
-            except Exception as e:
-                print(f"Error saving graph to Azure Storage: {e}")
+            nx.write_gml(self.graph, temp_file)
+            with open(temp_file, "rb") as data:
+                options = {"overwrite": False}
+                if self._storage_etag:
+                    options.update(
+                        {
+                            "overwrite": True,
+                            "etag": self._storage_etag,
+                            "match_condition": MatchConditions.IfNotModified,
+                        }
+                    )
+                try:
+                    result = blob_client.upload_blob(data, **options)
+                except (ResourceExistsError, ResourceModifiedError) as exc:
+                    raise ConcurrentWriteError(
+                        "The family tree changed in another application instance; refresh and retry"
+                    ) from exc
+            self._storage_etag = result.get("etag") or blob_client.get_blob_properties().etag
     # To Do: export the graph to CosmosDB
     def save_cosmosdb(self):
         # Save the graph to Azure Cosmos DB
@@ -155,12 +177,14 @@ class FamilyTree:
             temp_dir = tempfile.TemporaryDirectory()
             temp_file = os.path.join(temp_dir.name, "graph.gml")
             try:
+                downloader = blob_client.download_blob()
                 with open(temp_file, mode="wb") as f:
-                    f.write(blob_client.download_blob().readall())
+                    f.write(downloader.readall())
                 self.graph = nx.read_gml(temp_file)
+                self._storage_etag = downloader.properties.etag
                 return True
-            except Exception as e:
-                print(f"Error loading graph from Azure Storage: {e}")
+            except ResourceNotFoundError:
+                self._storage_etag = None
                 return False
         else:
             raise ValueError("Local file must be specified to load data when using backend=local")

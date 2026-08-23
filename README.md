@@ -139,6 +139,39 @@ that the user must explicitly review and override. Creating a person together
 with their initial relationships is transactional, so a warning or error does
 not leave a partial record behind.
 
+## Mobile photos
+
+Photo controls provide separate **Take photo** and **Choose photo** actions so
+phones can open either the camera or the native gallery/file-provider picker.
+HEIC and HEIF sources are converted to JPEG in the browser, EXIF orientation is
+honored, metadata is stripped, and images are resized to at most 2048 pixels on
+their longest side and compressed below 2 MB. Source files above 50 MB are
+rejected. Uploads show progress and can be cancelled while bytes are still
+being sent; retries reuse the same upload identity to avoid duplicate pictures.
+If tagging fails after upload, retry continues from tagging rather than
+uploading the file again.
+
+## Duplicate detection and person merging
+
+Person forms show nonblocking, explainable duplicate suggestions based on
+normalized names and aliases, matching life dates, and shared close relatives.
+Saving remains available because historical records may legitimately look
+similar.
+
+Administrators can preview and merge two people from the Administration page.
+The preview lists scalar and relationship conflicts, affected relationships,
+and the values that will be retained. Every conflict requires an explicit
+source/target decision. A merge repoints relationships, removes self-links and
+identical duplicate edges, unions pictures, notes, and tags, and records source
+provenance. The preview is rejected if the graph changes before execution.
+Azure Storage writes also use the loaded blob ETag, so concurrent writes from
+different application replicas return HTTP 409 instead of overwriting data.
+
+A merge can be undone from change history only while the merged person and its
+relationships still match the recorded post-merge state and the configured
+rollback window has not expired. Undo restores both original people and their
+incident relationships as a compensating revision.
+
 ## Change history and rollback
 
 Authenticated person and relationship mutations are written to an append-only

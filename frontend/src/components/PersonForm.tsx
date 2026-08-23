@@ -1,11 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getPersonSchema } from "@/lib/api";
-import type { ValidationIssue } from "@/lib/api";
+import { useState, useEffect, useRef } from "react";
+import { getPersonSchema, suggestDuplicates } from "@/lib/api";
+import type { DuplicateSuggestion, ValidationIssue } from "@/lib/api";
 import type { FieldConfig } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
 import ValidationMessages from "@/components/ValidationMessages";
+
+function duplicateReasonLabel(
+  code: string,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  switch (code) {
+    case "normalized_name":
+      return t("duplicates.reason.normalizedName");
+    case "name_alias_overlap":
+      return t("duplicates.reason.alias");
+    case "matching_birthdate":
+      return t("duplicates.reason.birthdate");
+    case "matching_deathdate":
+      return t("duplicates.reason.deathdate");
+    case "shared_close_relatives":
+      return t("duplicates.reason.relatives");
+    default:
+      return code;
+  }
+}
 
 interface Props {
   mode: "add" | "edit";
@@ -13,6 +33,8 @@ interface Props {
   title: string;
   submitting?: boolean;
   validationIssues?: ValidationIssue[];
+  personId?: string;
+  relativeIds?: string[];
   onSubmit: (data: Record<string, unknown>, overrideWarnings?: boolean) => void | Promise<void>;
   onValidationClear?: () => void;
   onCancel: () => void;
@@ -24,6 +46,8 @@ export default function PersonForm({
   title,
   submitting = false,
   validationIssues = [],
+  personId,
+  relativeIds = [],
   onSubmit,
   onValidationClear,
   onCancel,
@@ -31,10 +55,35 @@ export default function PersonForm({
   const { t } = useI18n();
   const [schema, setSchema] = useState<Record<string, FieldConfig>>({});
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData);
+  const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateSuggestion[]>([]);
+  const duplicateRequest = useRef(0);
+  const relativeIdsKey = relativeIds.join("\0");
+  const hasIdentity = ["firstname", "lastname", "alias", "birthdate"].some(
+    (field) => typeof formData[field] === "string" && formData[field].trim(),
+  );
 
   useEffect(() => {
     getPersonSchema().then((s) => setSchema(s as Record<string, FieldConfig>)).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    const request = ++duplicateRequest.current;
+    if (!hasIdentity) return;
+    const timeout = window.setTimeout(() => {
+      void suggestDuplicates(
+        formData,
+        personId,
+        relativeIdsKey ? relativeIdsKey.split("\0") : [],
+      )
+        .then((suggestions) => {
+          if (duplicateRequest.current === request) {
+            setDuplicateSuggestions(suggestions);
+          }
+        })
+        .catch((error) => console.error("Duplicate suggestion failed:", error));
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [formData, hasIdentity, personId, relativeIdsKey]);
 
   const handleChange = (field: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -59,6 +108,29 @@ export default function PersonForm({
         submitting={submitting}
         onOverride={() => onSubmit(formData, true)}
       />
+
+      {hasIdentity && duplicateSuggestions.length > 0 && (
+        <aside className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-semibold text-amber-900">{t("duplicates.possible")}</p>
+          <p className="mt-1 text-xs text-amber-800">{t("duplicates.nonBlocking")}</p>
+          <ul className="mt-2 space-y-1">
+            {duplicateSuggestions.slice(0, 3).map((suggestion) => (
+              <li key={suggestion.person_id} className="text-sm text-amber-900">
+                <a
+                  href={`/?person=${encodeURIComponent(suggestion.person_id)}`}
+                  className="font-medium underline"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {suggestion.fullname || suggestion.person_id}
+                </a>
+                {" · "}
+                {suggestion.score}% · {suggestion.reasons.map((reason) => duplicateReasonLabel(reason.code, t)).join(", ")}
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
 
       {Object.entries(schema).map(([field, config]) => {
         if (!isVisible(field, config)) return null;
