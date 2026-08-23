@@ -135,13 +135,6 @@ export default function ExplorePage() {
     setSelectedSiblings([]);
   }, []);
 
-  const closeSidePanel = () => {
-    setFormMode(null);
-    setLinkMode(null);
-    updateSelectedId("", "push");
-    clearPersonDetails();
-  };
-
   const fetchGraph = useCallback(async () => {
     setLoading(true);
     try {
@@ -543,15 +536,7 @@ export default function ExplorePage() {
         </div>
 
         {/* Detail panel */}
-        {showMobilePanel && (
-          <button
-            type="button"
-            className="fixed inset-0 z-20 bg-black/30 md:hidden"
-            aria-label={t("form.cancel")}
-            onClick={closeSidePanel}
-          />
-        )}
-        <div className={`${showMobilePanel ? "fixed inset-x-0 bottom-0 z-30 max-h-[72dvh] rounded-t-2xl border-t shadow-2xl" : "hidden"} w-full overflow-y-auto bg-white md:static md:block md:max-h-none md:flex-[35] md:rounded-none md:border-l md:border-t-0 md:shadow-none`}>
+        <div className={`${showMobilePanel ? "fixed inset-x-0 bottom-0 top-14 z-30 pb-[env(safe-area-inset-bottom)]" : "hidden"} w-full overflow-y-auto bg-white md:static md:block md:max-h-none md:flex-[35] md:rounded-none md:border-l md:border-t-0 md:pb-0 md:shadow-none`}>
           {formMode ? (
             <div className="p-4">
               <PersonForm

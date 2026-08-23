@@ -170,7 +170,12 @@ export default function DetailPanel({
             </button>
           )}
           {onClose && (
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 ml-1">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t("detail.close")}
+              className="ml-1 flex min-h-11 min-w-11 items-center justify-center rounded-full text-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700 md:min-h-0 md:min-w-0 md:text-base"
+            >
               ✕
             </button>
           )}
