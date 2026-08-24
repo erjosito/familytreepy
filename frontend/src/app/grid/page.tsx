@@ -185,10 +185,12 @@ export default function GridPage() {
       <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-gray-900">
-            {t("grid.title")} <span className="text-gray-400 font-normal text-lg">({sorted.length})</span>
+            {t("grid.title")} <span className="text-gray-600 font-normal text-lg">({sorted.length})</span>
           </h1>
+          <label htmlFor="grid-search" className="sr-only">{t("grid.search")}</label>
           <input
-            type="text"
+            id="grid-search"
+            type="search"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder={t("grid.search")}
@@ -197,7 +199,7 @@ export default function GridPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-gray-400">
+          <div role="status" className="flex items-center justify-center py-20 text-gray-600">
             {t("toolbar.loading")}
           </div>
         ) : (
@@ -216,10 +218,16 @@ export default function GridPage() {
                   {columns.map((col) => (
                     <th
                       key={col.key}
-                      onClick={() => handleSort(col.key)}
-                      className={`text-left px-3 py-2.5 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none ${col.width}`}
+                      aria-sort={sortField === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                      className={`text-left p-0 font-medium text-gray-600 ${col.width}`}
                     >
-                      {col.label}<SortIcon field={col.key} />
+                      <button
+                        type="button"
+                        onClick={() => handleSort(col.key)}
+                        className="w-full px-3 py-2.5 text-left hover:bg-gray-100"
+                      >
+                        {col.label}<SortIcon field={col.key} />
+                      </button>
                     </th>
                   ))}
                   <th className="text-right px-3 py-2.5 font-medium text-gray-600 w-28">
@@ -234,6 +242,7 @@ export default function GridPage() {
                       <>
                         <td className="px-3 py-1.5">
                           <input
+                            aria-label={t("field.firstName")}
                             type="text" value={draft.firstname || ""}
                             onChange={(e) => updateDraft({ firstname: e.target.value })}
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
@@ -241,6 +250,7 @@ export default function GridPage() {
                         </td>
                         <td className="px-3 py-1.5">
                           <input
+                            aria-label={t("field.lastName")}
                             type="text" value={draft.lastname || ""}
                             onChange={(e) => updateDraft({ lastname: e.target.value })}
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
@@ -248,6 +258,7 @@ export default function GridPage() {
                         </td>
                         <td className="px-3 py-1.5">
                           <input
+                            aria-label={t("field.alias")}
                             type="text" value={draft.alias || ""}
                             onChange={(e) => updateDraft({ alias: e.target.value })}
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
@@ -255,6 +266,7 @@ export default function GridPage() {
                         </td>
                         <td className="px-3 py-1.5">
                           <select
+                            aria-label={t("field.gender")}
                             value={draft.gender || ""}
                             onChange={(e) => updateDraft({ gender: e.target.value })}
                             className="w-full border rounded px-1 py-1 text-sm text-gray-900"
@@ -266,6 +278,7 @@ export default function GridPage() {
                         </td>
                         <td className="px-3 py-1.5">
                           <input
+                            aria-label={t("field.birthdate")}
                             type="text" value={draft.birthdate ?? ""}
                             onChange={(e) => updateDraft({ birthdate: e.target.value })}
                             placeholder="YYYY-MM-DD"
@@ -274,6 +287,7 @@ export default function GridPage() {
                         </td>
                         <td className="px-3 py-1.5">
                           <input
+                            aria-label={t("field.birthplace")}
                             type="text" value={draft.birthplace ?? ""}
                             onChange={(e) => updateDraft({ birthplace: e.target.value })}
                             className="w-full border rounded px-2 py-1 text-sm text-gray-900"
@@ -281,6 +295,7 @@ export default function GridPage() {
                         </td>
                         <td className="px-3 py-1.5 text-center">
                           <input
+                            aria-label={t("field.status")}
                             type="checkbox" checked={draft.isAlive ?? true}
                             onChange={(e) => updateDraft({ isAlive: e.target.checked })}
                             className="rounded"
@@ -289,6 +304,7 @@ export default function GridPage() {
                         <td className="px-3 py-1.5">
                           {!draft.isAlive && (
                             <input
+                              aria-label={t("field.deathDate")}
                               type="text" value={draft.deathdate ?? ""}
                               onChange={(e) => updateDraft({ deathdate: e.target.value })}
                               placeholder="YYYY-MM-DD"
@@ -382,7 +398,7 @@ export default function GridPage() {
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
+                    <td colSpan={9} className="px-3 py-8 text-center text-gray-600">
                       {filter ? t("tag.noMatches") : t("admin.noUsers")}
                     </td>
                   </tr>

@@ -12,6 +12,11 @@ const translations = {
     "nav.image": "Image",
     "nav.devMode": "Dev Mode",
     "nav.signOut": "Sign out",
+    "nav.openMenu": "Open navigation menu",
+    "nav.closeMenu": "Close navigation menu",
+    "nav.mainMenu": "Main navigation",
+    "nav.language": "Language",
+    "nav.skipToContent": "Skip to main content",
 
     // Auth
     "auth.loading": "Loading...",
@@ -34,6 +39,10 @@ const translations = {
     "toolbar.radius": "Radius:",
     "toolbar.layout": "Layout:",
     "toolbar.loading": "Loading...",
+    "graph.label": "Interactive family tree",
+    "graph.keyboardInstructions": "Use the arrow keys to move between people. Press Enter or Space to open details, C to center the selected person, or Shift+F10 to open person actions.",
+    "graph.selected": "Selected {name}",
+    "menu.personActions": "Person actions",
     "search.label": "Find a person",
     "search.placeholder": "Search name or alias...",
     "search.results": "Search results",
@@ -404,6 +413,11 @@ const translations = {
     "nav.image": "Imagen",
     "nav.devMode": "Modo Dev",
     "nav.signOut": "Cerrar sesión",
+    "nav.openMenu": "Abrir menú de navegación",
+    "nav.closeMenu": "Cerrar menú de navegación",
+    "nav.mainMenu": "Navegación principal",
+    "nav.language": "Idioma",
+    "nav.skipToContent": "Saltar al contenido principal",
 
     // Auth
     "auth.loading": "Cargando...",
@@ -426,6 +440,10 @@ const translations = {
     "toolbar.radius": "Radio:",
     "toolbar.layout": "Disposición:",
     "toolbar.loading": "Cargando...",
+    "graph.label": "Árbol familiar interactivo",
+    "graph.keyboardInstructions": "Usa las flechas para moverte entre personas. Pulsa Intro o Espacio para abrir los detalles, C para centrar la persona seleccionada o Mayús+F10 para abrir sus acciones.",
+    "graph.selected": "Seleccionada: {name}",
+    "menu.personActions": "Acciones de la persona",
     "search.label": "Buscar una persona",
     "search.placeholder": "Buscar nombre o alias...",
     "search.results": "Resultados de búsqueda",
@@ -811,6 +829,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     const timeout = window.setTimeout(() => setLocaleState(saved), 0);
     return () => window.clearTimeout(timeout);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);

@@ -57,6 +57,7 @@ export default function PersonForm({
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData);
   const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateSuggestion[]>([]);
   const duplicateRequest = useRef(0);
+  const validationSummaryRef = useRef<HTMLDivElement>(null);
   const relativeIdsKey = relativeIds.join("\0");
   const hasIdentity = ["firstname", "lastname", "alias", "birthdate"].some(
     (field) => typeof formData[field] === "string" && formData[field].trim(),
@@ -85,6 +86,19 @@ export default function PersonForm({
     return () => window.clearTimeout(timeout);
   }, [formData, hasIdentity, personId, relativeIdsKey]);
 
+  useEffect(() => {
+    if (validationIssues.length === 0) return;
+    const firstField = validationIssues.find((issue) => issue.field)?.field;
+    const field = firstField
+      ? document.getElementById(`person-form-${firstField}`)
+      : null;
+    if (field instanceof HTMLElement) {
+      field.focus();
+    } else {
+      validationSummaryRef.current?.focus();
+    }
+  }, [validationIssues]);
+
   const handleChange = (field: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     onValidationClear?.();
@@ -103,14 +117,16 @@ export default function PersonForm({
     <form onSubmit={handleSubmit} className="space-y-3">
       <h3 className="font-semibold text-lg">{title}</h3>
 
-      <ValidationMessages
-        issues={validationIssues}
-        submitting={submitting}
-        onOverride={() => onSubmit(formData, true)}
-      />
+      <div ref={validationSummaryRef} tabIndex={-1}>
+        <ValidationMessages
+          issues={validationIssues}
+          submitting={submitting}
+          onOverride={() => onSubmit(formData, true)}
+        />
+      </div>
 
       {hasIdentity && duplicateSuggestions.length > 0 && (
-        <aside className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <aside aria-live="polite" aria-atomic="true" className="rounded-lg border border-amber-200 bg-amber-50 p-3">
           <p className="text-sm font-semibold text-amber-900">{t("duplicates.possible")}</p>
           <p className="mt-1 text-xs text-amber-800">{t("duplicates.nonBlocking")}</p>
           <ul className="mt-2 space-y-1">
@@ -135,36 +151,48 @@ export default function PersonForm({
       {Object.entries(schema).map(([field, config]) => {
         if (!isVisible(field, config)) return null;
         if (config.type === "image_url" || config.type === "image_url_array") return null;
+        const fieldId = `person-form-${field}`;
+        const fieldIssues = validationIssues.filter((issue) => issue.field === field);
+        const describedBy = fieldIssues.length > 0 ? `${fieldId}-issues` : undefined;
 
         return (
           <div key={field}>
-            <label className="block text-sm font-medium text-gray-600 mb-1">{config.label}</label>
+            <label htmlFor={fieldId} className="block text-sm font-medium text-gray-600 mb-1">{config.label}</label>
             {config.type === "boolean" ? (
               <input
+                id={fieldId}
                 type="checkbox"
                 checked={formData[field] as boolean ?? config.default ?? false}
                 onChange={(e) => handleChange(field, e.target.checked)}
+                aria-invalid={fieldIssues.some((issue) => issue.severity === "error")}
+                aria-describedby={describedBy}
                 className="rounded"
               />
             ) : config.type === "date" ? (
               <input
+                id={fieldId}
                 type="text"
                 value={(formData[field] as string) || ""}
                 onChange={(e) => handleChange(field, e.target.value)}
                 placeholder="dd/mm/yyyy"
+                aria-invalid={fieldIssues.some((issue) => issue.severity === "error")}
+                aria-describedby={describedBy}
                 className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
               />
             ) : (
               <input
+                id={fieldId}
                 type="text"
                 value={(formData[field] as string) || ""}
                 onChange={(e) => handleChange(field, e.target.value)}
+                aria-invalid={fieldIssues.some((issue) => issue.severity === "error")}
+                aria-describedby={describedBy}
                 className="w-full border rounded px-3 py-1.5 text-sm text-gray-900"
               />
             )}
-            {validationIssues
-              .filter((issue) => issue.field === field)
-              .map((issue, index) => (
+            {fieldIssues.length > 0 && (
+              <div id={`${fieldId}-issues`}>
+                {fieldIssues.map((issue, index) => (
                 <p
                   key={`${issue.code}-${index}`}
                   className={`mt-1 text-xs ${
@@ -173,7 +201,9 @@ export default function PersonForm({
                 >
                   {issue.message}
                 </p>
-              ))}
+                ))}
+              </div>
+            )}
           </div>
         );
       })}

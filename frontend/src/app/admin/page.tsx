@@ -125,7 +125,7 @@ export default function AdminPage() {
         <h1 className="text-2xl font-bold text-gray-900">{t("admin.title")}</h1>
 
         {error && (
-          <div className="bg-red-50 text-red-700 rounded-lg border border-red-200 p-3 text-sm">
+          <div role="alert" className="break-words bg-red-50 text-red-700 rounded-lg border border-red-200 p-3 text-sm">
             {error}
           </div>
         )}
@@ -153,6 +153,7 @@ export default function AdminPage() {
                     <>
                       <td className="px-4 py-2">
                         <input
+                          aria-label={t("admin.email")}
                           type="email"
                           value={editDraft.email}
                           onChange={(e) => setEditDraft({ ...editDraft, email: e.target.value })}
@@ -161,6 +162,7 @@ export default function AdminPage() {
                       </td>
                       <td className="px-4 py-2">
                         <select
+                          aria-label={t("admin.role")}
                           value={editDraft.role}
                           onChange={(e) => setEditDraft({ ...editDraft, role: e.target.value })}
                           className="border rounded px-2 py-1 text-sm text-gray-900"
@@ -221,7 +223,7 @@ export default function AdminPage() {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
+                  <td colSpan={3} className="px-4 py-6 text-center text-gray-600">
                     {t("admin.noUsers")}
                   </td>
                 </tr>
@@ -233,10 +235,11 @@ export default function AdminPage() {
         {/* Add user form */}
         <div className="bg-white rounded-lg border shadow-sm p-4">
           <h2 className="font-semibold text-gray-900 mb-3">{t("admin.addUser")}</h2>
-          <form onSubmit={handleAdd} className="flex items-end gap-3">
+          <form onSubmit={handleAdd} className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
             <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("admin.email")}</label>
+              <label htmlFor="admin-new-email" className="block text-xs font-medium text-gray-600 mb-1">{t("admin.email")}</label>
               <input
+                id="admin-new-email"
                 type="email"
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
@@ -246,8 +249,9 @@ export default function AdminPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("admin.role")}</label>
+              <label htmlFor="admin-new-role" className="block text-xs font-medium text-gray-600 mb-1">{t("admin.role")}</label>
               <select
+                id="admin-new-role"
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
                 className="border rounded px-3 py-1.5 text-sm text-gray-900"

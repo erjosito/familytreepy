@@ -21,7 +21,7 @@ import { Suspense } from "react";
 
 export default function PersonPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Loading...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">Loading...</div>}>
       <PersonPageContent />
     </Suspense>
   );
@@ -141,7 +141,7 @@ function PersonPageContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
         {t("person.loading")}
       </div>
     );
@@ -216,7 +216,7 @@ function PersonPageContent() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-gray-400">—</p>
+                <p className="text-sm text-gray-600">—</p>
               )}
             </div>
 
@@ -243,7 +243,7 @@ function PersonPageContent() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-gray-400">—</p>
+                <p className="text-sm text-gray-600">—</p>
               )}
             </div>
 
@@ -263,7 +263,7 @@ function PersonPageContent() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-gray-400">—</p>
+                <p className="text-sm text-gray-600">—</p>
               )}
             </div>
           </div>
@@ -297,7 +297,7 @@ function PersonPageContent() {
         {/* Notes */}
         <div className="bg-white rounded-lg border shadow-sm p-6">
           <h2 className="font-semibold text-gray-900 mb-4">
-            {t("notes.title")} {notes.length > 0 && <span className="text-gray-400 font-normal">({notes.length})</span>}
+            {t("notes.title")} {notes.length > 0 && <span className="text-gray-600 font-normal">({notes.length})</span>}
           </h2>
 
           {notes.length > 0 && (
@@ -307,7 +307,7 @@ function PersonPageContent() {
                   <p className="text-gray-900 whitespace-pre-wrap">{note.text}</p>
                   <div className="flex items-center gap-2 mt-2">
                     <span className="text-xs text-gray-500">— {note.author}</span>
-                    <span className="text-xs text-gray-400">{formatTimestamp(note.timestamp)}</span>
+                    <span className="text-xs text-gray-600">{formatTimestamp(note.timestamp)}</span>
                   </div>
                   {adminView && (
                     <button
@@ -495,8 +495,8 @@ function ProfileHeader({
   };
 
   return (
-    <div className="bg-white rounded-lg border shadow-sm p-6">
-      <div className="flex items-start gap-6">
+    <div className="bg-white rounded-lg border p-4 shadow-sm sm:p-6">
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-6">
         {/* Profile picture with change overlay */}
         <div className="relative group flex-shrink-0">
           {person.profilepic ? (
@@ -506,7 +506,7 @@ function ProfileHeader({
               className="w-32 h-32 rounded-full object-cover border-2 border-gray-200"
             />
           ) : (
-            <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 text-3xl font-bold border-2 border-gray-200">
+            <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-3xl font-bold border-2 border-gray-200">
               {(person.firstname?.[0] || "?").toUpperCase()}
             </div>
           )}
@@ -535,7 +535,7 @@ function ProfileHeader({
           />
         )}
 
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 w-full flex-1">
           {editing ? (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -703,7 +703,7 @@ function ProfileHeader({
                   <button
                     onClick={handleDeletePerson}
                     disabled={deletingPerson}
-                    className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="text-xs px-2 py-1 rounded border border-red-200 text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     🗑 {t("menu.deletePerson")}
                   </button>
@@ -856,7 +856,7 @@ function PersonPictures({
     <div className="bg-white rounded-lg border shadow-sm p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-semibold text-gray-900">
-          {t("person.pictures")} {pics.length > 0 && <span className="text-gray-400 font-normal">({pics.length})</span>}
+          {t("person.pictures")} {pics.length > 0 && <span className="text-gray-600 font-normal">({pics.length})</span>}
         </h2>
         {!preview && (
           <PhotoPicker onSelected={handleSelected} />
@@ -916,7 +916,7 @@ function PersonPictures({
                 </div>
               )}
               {tagQuery.trim() && filteredTaggable.length === 0 && (
-                <p className="text-xs text-gray-400 py-1">{t("tag.noMatches")}</p>
+                <p className="text-xs text-gray-600 py-1">{t("tag.noMatches")}</p>
               )}
             </div>
           )}
@@ -970,7 +970,7 @@ function PersonPictures({
           ))}
         </div>
       ) : (
-        <p className="text-sm text-gray-400">{t("person.noPictures")}</p>
+        <p className="text-sm text-gray-600">{t("person.noPictures")}</p>
       )}
     </div>
   );
@@ -1136,7 +1136,7 @@ function PictureCard({
             </div>
           )}
           {tagQuery.trim() && filtered.length === 0 && (
-            <p className="text-xs text-gray-400">{t("tag.noMatches")}</p>
+            <p className="text-xs text-gray-600">{t("tag.noMatches")}</p>
           )}
         </div>
       )}
