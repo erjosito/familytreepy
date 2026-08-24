@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "start:a11y": "serve -l 3000 out",
+    "lint": "eslint",
+    "test:a11y": "playwright test"
   },
   "dependencies": {
     "@azure/msal-browser": "^4.29.0",
@@ -20,6 +22,8 @@
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/cytoscape-fcose": "^2.2.5",
     "@types/node": "^20",
@@ -27,6 +31,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "serve": "^14.2.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

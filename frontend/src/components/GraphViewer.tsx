@@ -5,6 +5,7 @@ import cytoscape, { type Core, type EventObject, type LayoutOptions, type Positi
 import fcose from "cytoscape-fcose";
 import type { LayoutMode } from "@/lib/graphViewState";
 import type { GraphData } from "@/lib/types";
+import { useI18n } from "@/lib/i18n";
 
 cytoscape.use(fcose);
 
@@ -365,12 +366,47 @@ function getGraphSignature(data: GraphData, layout: LayoutMode): string {
 }
 
 export default function GraphViewer({ data, layout = "family", onNodeClick, onNodeDblClick, onContextMenu, onNodeLongPress, relationshipColors = DEFAULT_RELATIONSHIP_COLORS, focusNodeId, focusRequest }: Props) {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const suppressTapUntilRef = useRef(0);
   const savedGraphStateRef = useRef<SavedGraphState | null>(null);
   const focusRef = useRef({ nodeId: focusNodeId, request: focusRequest });
   const appliedFocusRef = useRef<{ nodeId: string; request: number | undefined } | null>(null);
+  const keyboardNodeIdRef = useRef("");
+  const statusRef = useRef<HTMLParagraphElement>(null);
+
+  const prefersReducedMotion = useCallback(
+    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
+
+  const announceNode = useCallback((nodeId: string) => {
+    const person = data.nodes.find((node) => node.id === nodeId);
+    if (statusRef.current) {
+      statusRef.current.textContent = t("graph.selected").replace("{name}", person?.fullname || "?");
+    }
+  }, [data.nodes, t]);
+
+  const selectKeyboardNode = useCallback((index: number, center = true) => {
+    const cy = cyRef.current;
+    if (!cy || data.nodes.length === 0) return;
+    const nextIndex = Math.max(0, Math.min(index, data.nodes.length - 1));
+    const nodeId = data.nodes[nextIndex].id;
+    const node = cy.getElementById(nodeId);
+    if (node.empty()) return;
+    keyboardNodeIdRef.current = nodeId;
+    cy.elements().unselect();
+    node.select();
+    if (center) {
+      if (prefersReducedMotion()) {
+        cy.center(node);
+      } else {
+        cy.animate({ center: { eles: node } }, { duration: 180 });
+      }
+    }
+    announceNode(nodeId);
+  }, [announceNode, data.nodes, prefersReducedMotion]);
 
   const applyPendingFocus = useCallback(() => {
     const cy = cyRef.current;
@@ -386,12 +422,19 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
     if (node.empty()) return;
     cy.elements().unselect();
     node.select();
-    cy.animate(
-      { center: { eles: node }, zoom: Math.max(cy.zoom(), 1.4) },
-      { duration: 300 },
-    );
+    if (prefersReducedMotion()) {
+      cy.center(node);
+      cy.zoom(Math.max(cy.zoom(), 1.4));
+    } else {
+      cy.animate(
+        { center: { eles: node }, zoom: Math.max(cy.zoom(), 1.4) },
+        { duration: 300 },
+      );
+    }
+    keyboardNodeIdRef.current = nodeId;
+    announceNode(nodeId);
     appliedFocusRef.current = { nodeId, request };
-  }, []);
+  }, [announceNode, prefersReducedMotion]);
 
   const handleTap = useCallback(
     (e: EventObject) => {
@@ -652,6 +695,20 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
     applyPendingFocus();
   }, [focusNodeId, focusRequest, applyPendingFocus]);
 
+  useEffect(() => {
+    const selectedIndex = data.nodes.findIndex(
+      (node) => node.id === keyboardNodeIdRef.current,
+    );
+    if (selectedIndex >= 0) {
+      selectKeyboardNode(selectedIndex, false);
+      return;
+    }
+    keyboardNodeIdRef.current = "";
+    if (document.activeElement === containerRef.current && data.nodes.length > 0) {
+      selectKeyboardNode(0, false);
+    }
+  }, [data.nodes, selectKeyboardNode]);
+
   // Suppress browser context menu and handle right-click on nodes.
   useEffect(() => {
     const el = containerRef.current;
@@ -691,9 +748,58 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
   }, [onContextMenu]);
 
   return (
-    <div
-      ref={containerRef}
-      className="h-full min-h-0 w-full touch-none bg-gray-50 md:rounded-lg md:border"
-    />
+    <>
+      <p id="graph-keyboard-instructions" className="sr-only">
+        {t("graph.keyboardInstructions")}
+      </p>
+      <p id="graph-keyboard-status" ref={statusRef} className="sr-only" aria-live="polite" aria-atomic="true" />
+      <div
+        ref={containerRef}
+        role="application"
+        tabIndex={0}
+        aria-label={t("graph.label")}
+        aria-describedby="graph-keyboard-instructions"
+        onFocus={() => {
+          if (
+            data.nodes.length > 0
+            && !data.nodes.some((node) => node.id === keyboardNodeIdRef.current)
+          ) {
+            const requestedIndex = data.nodes.findIndex((node) => node.id === focusNodeId);
+            selectKeyboardNode(requestedIndex >= 0 ? requestedIndex : 0, false);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (data.nodes.length === 0) return;
+          const selectedIndex = data.nodes.findIndex(
+            (node) => node.id === keyboardNodeIdRef.current,
+          );
+          const current = selectedIndex >= 0 ? selectedIndex : 0;
+          const currentNode = data.nodes[current];
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            event.preventDefault();
+            selectKeyboardNode((current + 1) % data.nodes.length);
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+            event.preventDefault();
+            selectKeyboardNode((current - 1 + data.nodes.length) % data.nodes.length);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            selectKeyboardNode(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            selectKeyboardNode(data.nodes.length - 1);
+          } else if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onNodeClick?.(currentNode.id);
+          } else if (event.key === "c" || event.key === "C") {
+            event.preventDefault();
+            onNodeDblClick?.(currentNode.id);
+          } else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+            event.preventDefault();
+            onNodeLongPress?.(currentNode.id);
+          }
+        }}
+        className="h-full min-h-0 w-full touch-none bg-gray-50 md:rounded-lg md:border"
+      />
+    </>
   );
 }

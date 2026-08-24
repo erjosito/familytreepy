@@ -85,8 +85,9 @@ export default function ImagePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t("image.centerPerson")}</label>
+              <label htmlFor="image-center-person" className="block text-sm font-medium text-gray-700 mb-1">{t("image.centerPerson")}</label>
               <select
+                id="image-center-person"
                 className="w-full border rounded px-3 py-2 text-sm text-gray-900"
                 value={rootId}
                 onChange={(e) => setRootId(e.target.value)}
@@ -101,10 +102,11 @@ export default function ImagePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="image-degree" className="block text-sm font-medium text-gray-700 mb-1">
                 {t("image.degree")} {degree}
               </label>
               <input
+                id="image-degree"
                 type="range" min={1} max={5} value={degree}
                 onChange={(e) => setDegree(Number(e.target.value))}
                 className="w-full mt-2"
@@ -112,8 +114,9 @@ export default function ImagePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t("image.layout")}</label>
+              <label htmlFor="image-layout" className="block text-sm font-medium text-gray-700 mb-1">{t("image.layout")}</label>
               <select
+                id="image-layout"
                 className="w-full border rounded px-3 py-2 text-sm text-gray-900"
                 value={renderer}
                 onChange={(e) => setRenderer(e.target.value)}
@@ -132,7 +135,9 @@ export default function ImagePage() {
               {COLOR_SCHEMES.map((cs) => (
                 <button
                   key={cs.value}
+                  type="button"
                   onClick={() => setColorScheme(cs.value)}
+                  aria-pressed={colorScheme === cs.value}
                   className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                     colorScheme === cs.value
                       ? "bg-blue-600 text-white border-blue-600"
@@ -147,20 +152,24 @@ export default function ImagePage() {
 
           {/* Advanced options toggle */}
           <button
+            type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
+            aria-expanded={showAdvanced}
+            aria-controls="advanced-image-options"
             className="text-sm text-blue-600 hover:underline"
           >
             {showAdvanced ? "▼" : "▶"} {t("image.advanced")}
           </button>
 
           {showAdvanced && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+            <div id="advanced-image-options" className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="image-canvas-size" className="block text-sm font-medium text-gray-700 mb-1">
                   {t("image.canvasSize")} ({canvasWidth} × {canvasHeight})
                 </label>
                 <div className="flex gap-2">
                   <select
+                    id="image-canvas-size"
                     className="flex-1 border rounded px-2 py-1.5 text-sm text-gray-900"
                     value={`${canvasWidth}x${canvasHeight}`}
                     onChange={(e) => {
@@ -180,10 +189,11 @@ export default function ImagePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="image-font-scale" className="block text-sm font-medium text-gray-700 mb-1">
                   {t("image.fontScale")} ({fontScale.toFixed(1)}×)
                 </label>
                 <input
+                  id="image-font-scale"
                   type="range" min={0.5} max={2.0} step={0.1} value={fontScale}
                   onChange={(e) => setFontScale(Number(e.target.value))}
                   className="w-full"
@@ -191,10 +201,11 @@ export default function ImagePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="image-line-width" className="block text-sm font-medium text-gray-700 mb-1">
                   {t("image.lineWidth")} ({lineWidth}px)
                 </label>
                 <input
+                  id="image-line-width"
                   type="range" min={1} max={5} step={1} value={lineWidth}
                   onChange={(e) => setLineWidth(Number(e.target.value))}
                   className="w-full"
@@ -204,6 +215,7 @@ export default function ImagePage() {
           )}
 
           <button
+            type="button"
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
             onClick={handleGenerate}
             disabled={!rootId || !renderer || loading}
@@ -214,7 +226,7 @@ export default function ImagePage() {
 
         {/* Error */}
         {error && (
-          <div className="bg-red-50 text-red-700 rounded-lg border border-red-200 p-4 text-sm">
+          <div role="alert" className="bg-red-50 text-red-700 rounded-lg border border-red-200 p-4 text-sm">
             {error}
           </div>
         )}

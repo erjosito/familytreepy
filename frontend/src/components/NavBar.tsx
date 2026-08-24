@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { isAuthEnabled } from "@/lib/auth";
 import { useI18n, type Locale } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
@@ -16,23 +17,43 @@ interface NavBarProps {
 export default function NavBar({ userName, onLogout }: NavBarProps) {
   const { t, locale, setLocale } = useI18n();
   const { isAdmin, adminView, setAdminView } = useAdminView();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    mobileMenuRef.current?.querySelector<HTMLElement>("a, button")?.focus();
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      const menuButton = menuButtonRef.current;
+      setMenuOpen(false);
+      window.setTimeout(() => menuButton?.focus(), 0);
+    };
+    document.addEventListener("keydown", handleEscape, true);
+    return () => document.removeEventListener("keydown", handleEscape, true);
+  }, [menuOpen]);
+
+  const isCurrent = (href: string) => pathname === href || pathname === `${href}/`;
 
   const navLinks = (
     <>
-      <Link href="/" onClick={() => setMenuOpen(false)} className="text-gray-700 hover:text-blue-600">
+      <Link href="/" aria-current={isCurrent("/") ? "page" : undefined} onClick={() => setMenuOpen(false)} className="text-gray-700 hover:text-blue-600">
         {t("nav.explore")}
       </Link>
-      <Link href="/image/" onClick={() => setMenuOpen(false)} className="text-gray-700 hover:text-blue-600">
+      <Link href="/image/" aria-current={isCurrent("/image") ? "page" : undefined} onClick={() => setMenuOpen(false)} className="text-gray-700 hover:text-blue-600">
         {t("nav.image")}
       </Link>
       {adminView && (
-        <Link href="/grid/" onClick={() => setMenuOpen(false)} className="text-gray-700 hover:text-blue-600">
+        <Link href="/grid/" aria-current={isCurrent("/grid") ? "page" : undefined} onClick={() => setMenuOpen(false)} className="text-gray-700 hover:text-blue-600">
           {t("nav.grid")}
         </Link>
       )}
       {adminView && (
-        <Link href="/admin/" onClick={() => setMenuOpen(false)} className="text-gray-700 hover:text-blue-600">
+        <Link href="/admin/" aria-current={isCurrent("/admin") ? "page" : undefined} onClick={() => setMenuOpen(false)} className="text-gray-700 hover:text-blue-600">
           {t("nav.admin")}
         </Link>
       )}
@@ -40,12 +61,14 @@ export default function NavBar({ userName, onLogout }: NavBarProps) {
   );
 
   const languageSelector = (
-    <div className="flex items-center gap-1 text-xs">
+    <div className="flex items-center gap-1 text-xs" role="group" aria-label={t("nav.language")}>
       {(Object.keys(LOCALE_LABELS) as Locale[]).map((l) => (
         <button
           key={l}
           type="button"
           onClick={() => setLocale(l)}
+          aria-pressed={locale === l}
+          aria-label={l === "en" ? "English" : "Español"}
           className={`min-h-8 min-w-8 rounded ${
             locale === l
               ? "bg-blue-600 text-white"
@@ -59,8 +82,8 @@ export default function NavBar({ userName, onLogout }: NavBarProps) {
   );
 
   return (
-    <nav className="relative z-40 flex h-14 md:h-12 items-center gap-4 px-4 bg-white border-b shadow-sm">
-      <Link href="/" className="text-lg font-bold text-blue-600 whitespace-nowrap">
+    <nav aria-label={t("nav.mainMenu")} className="relative z-40 flex h-14 md:h-12 items-center gap-4 px-4 bg-white border-b shadow-sm">
+      <Link href="/" aria-current={isCurrent("/") ? "page" : undefined} className="text-lg font-bold text-blue-600 whitespace-nowrap">
         {t("nav.title")}
       </Link>
 
@@ -102,17 +125,19 @@ export default function NavBar({ userName, onLogout }: NavBarProps) {
             )}
           </div>
         ) : !isAuthEnabled() ? (
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+          <span className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
             {t("nav.devMode")}
           </span>
         ) : null}
       </div>
 
       <button
+        ref={menuButtonRef}
         type="button"
         className="ml-auto md:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-xl text-gray-700 hover:bg-gray-50"
-        aria-label={t("nav.title")}
+        aria-label={t(menuOpen ? "nav.closeMenu" : "nav.openMenu")}
         aria-expanded={menuOpen}
+        aria-controls="mobile-navigation"
         onClick={() => setMenuOpen((open) => !open)}
       >
         {menuOpen ? "✕" : "☰"}
@@ -126,7 +151,11 @@ export default function NavBar({ userName, onLogout }: NavBarProps) {
             aria-label={t("form.cancel")}
             onClick={() => setMenuOpen(false)}
           />
-          <div className="absolute inset-x-0 top-full flex flex-col gap-1 border-b bg-white p-3 shadow-lg md:hidden">
+          <div
+            ref={mobileMenuRef}
+            id="mobile-navigation"
+            className="absolute inset-x-0 top-full flex flex-col gap-1 border-b bg-white p-3 shadow-lg md:hidden"
+          >
             <div className="flex flex-col text-sm [&>a]:rounded-lg [&>a]:px-3 [&>a]:py-3">
               {navLinks}
             </div>
@@ -157,7 +186,7 @@ export default function NavBar({ userName, onLogout }: NavBarProps) {
                   )}
                 </>
               ) : !isAuthEnabled() ? (
-                <span className="text-xs text-gray-400">{t("nav.devMode")}</span>
+                <span className="text-xs text-gray-600">{t("nav.devMode")}</span>
               ) : null}
             </div>
           </div>

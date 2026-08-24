@@ -64,7 +64,7 @@ export default function DetailPanel({
 
   if (!person) {
     return (
-      <div className="p-6 text-gray-400 text-center">
+      <div className="p-6 text-gray-600 text-center">
         <p className="text-lg">{t("detail.selectPerson")}</p>
         <p className="text-sm mt-2">{t("detail.selectHint")}</p>
       </div>

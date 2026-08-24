@@ -84,6 +84,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       <div
+        role="region"
         className="pointer-events-none fixed inset-x-0 top-16 z-[200] flex flex-col items-end gap-2 px-3 sm:left-auto sm:right-4 sm:top-16 sm:w-[min(24rem,calc(100vw-2rem))] sm:px-0"
         aria-label={t("toast.notifications")}
       >

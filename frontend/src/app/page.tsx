@@ -440,8 +440,9 @@ export default function ExplorePage() {
           }}
         />
         <div className="flex min-w-0 items-center gap-2">
-          <label className="shrink-0 text-sm text-gray-700">{t("toolbar.center")}</label>
+          <label htmlFor="graph-center-person" className="shrink-0 text-sm text-gray-700">{t("toolbar.center")}</label>
           <select
+            id="graph-center-person"
             className="min-w-0 flex-1 border rounded px-2 py-2 text-sm text-gray-900 md:max-w-[250px] md:py-1"
             value={rootId}
             onChange={(e) => updateRoot(e.target.value, "push")}
@@ -456,8 +457,9 @@ export default function ExplorePage() {
         </div>
 
         <div className="flex min-w-0 items-center gap-2">
-          <label className="shrink-0 text-sm text-gray-700">{t("toolbar.radius")}</label>
+          <label htmlFor="graph-radius" className="shrink-0 text-sm text-gray-700">{t("toolbar.radius")}</label>
           <input
+            id="graph-radius"
             type="range"
             min={1}
             max={10}
@@ -465,10 +467,11 @@ export default function ExplorePage() {
             onChange={(e) => updateRadius(Number(e.target.value))}
             className="min-w-16 flex-1 md:w-24 md:flex-none"
           />
-          <span className="w-4 shrink-0 text-sm font-mono">{degree}</span>
+          <output htmlFor="graph-radius" className="w-4 shrink-0 text-sm font-mono">{degree}</output>
 
-          <label className="ml-1 shrink-0 text-sm text-gray-700">{t("toolbar.layout")}</label>
+          <label htmlFor="graph-layout" className="ml-1 shrink-0 text-sm text-gray-700">{t("toolbar.layout")}</label>
           <select
+            id="graph-layout"
             className="min-w-0 flex-1 border rounded px-2 py-2 text-sm text-gray-900 md:flex-none md:py-1"
             value={layoutMode}
             onChange={(e) => updateLayout(e.target.value as LayoutMode)}
@@ -498,7 +501,7 @@ export default function ExplorePage() {
         {/* Graph panel */}
         <div className="relative min-w-0 flex-1 md:flex-[65]">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
+            <div role="status" className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
               <span className="text-gray-400">{t("toolbar.loading")}</span>
             </div>
           )}

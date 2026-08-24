@@ -19,7 +19,10 @@ function AuthGate({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authError] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("auth_error");
+  });
 
   useEffect(() => {
     // Check for auth error in URL params (e.g., ?auth_error=not_authorized)
@@ -27,7 +30,6 @@ function AuthGate({ children }: { children: ReactNode }) {
       const params = new URLSearchParams(window.location.search);
       const error = params.get("auth_error");
       if (error) {
-        setAuthError(error);
         // Clean URL
         window.history.replaceState({}, "", window.location.pathname);
       }
@@ -42,15 +44,15 @@ function AuthGate({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400">
+      <main id="main-content" tabIndex={-1} className="flex items-center justify-center h-screen bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400">
         {t("auth.loading")}
-      </div>
+      </main>
     );
   }
 
   if (authError === "not_authorized") {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4 bg-white dark:bg-gray-900 px-6 text-center">
+      <main id="main-content" tabIndex={-1} className="flex flex-col items-center justify-center h-screen gap-4 bg-white dark:bg-gray-900 px-6 text-center">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t("auth.title")}</h1>
         <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 max-w-md">
           <p className="text-red-700 dark:text-red-300 font-medium">{t("auth.notAuthorized")}</p>
@@ -62,13 +64,13 @@ function AuthGate({ children }: { children: ReactNode }) {
         >
           {t("auth.tryDifferentAccount")}
         </a>
-      </div>
+      </main>
     );
   }
 
   if (authError) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4 bg-white dark:bg-gray-900 px-6 text-center">
+      <main id="main-content" tabIndex={-1} className="flex flex-col items-center justify-center h-screen gap-4 bg-white dark:bg-gray-900 px-6 text-center">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t("auth.title")}</h1>
         <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 max-w-md">
           <p className="text-red-700 dark:text-red-300">{t("auth.signInError")}: {authError}</p>
@@ -79,13 +81,13 @@ function AuthGate({ children }: { children: ReactNode }) {
         >
           {t("auth.tryAgain")}
         </a>
-      </div>
+      </main>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4 bg-white dark:bg-gray-900">
+      <main id="main-content" tabIndex={-1} className="flex flex-col items-center justify-center h-screen gap-4 bg-white dark:bg-gray-900">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t("auth.title")}</h1>
         <p className="text-gray-500 dark:text-gray-400">{t("auth.signInPrompt")}</p>
         <div className="flex flex-col gap-2 w-64">
@@ -104,7 +106,7 @@ function AuthGate({ children }: { children: ReactNode }) {
             {t("auth.signInGoogle")}
           </a>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -116,7 +118,7 @@ function AuthGate({ children }: { children: ReactNode }) {
         await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", credentials: "include" });
         window.location.reload();
       }} />
-      {children}
+      <main id="main-content" tabIndex={-1}>{children}</main>
     </AdminViewProvider>
   );
 }
@@ -126,7 +128,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return (
       <AdminViewProvider isAdmin={true} userEmail="dev@localhost">
         <NavBar />
-        {children}
+        <main id="main-content" tabIndex={-1}>{children}</main>
       </AdminViewProvider>
     );
   }
