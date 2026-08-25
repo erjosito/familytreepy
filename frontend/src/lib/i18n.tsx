@@ -42,6 +42,7 @@ const translations = {
     "graph.label": "Interactive family tree",
     "graph.keyboardInstructions": "Use the arrow keys to move between people. Press Enter or Space to open details, C to center the selected person, or Shift+F10 to open person actions.",
     "graph.selected": "Selected {name}",
+    "graph.selectedWithConnections": "Selected {name}. Directly connected to {connections}.",
     "menu.personActions": "Person actions",
     "search.label": "Find a person",
     "search.placeholder": "Search name or alias...",
@@ -56,7 +57,7 @@ const translations = {
 
     // Layout modes
     "layout.family": "Family tree",
-    "layout.legacyHierarchical": "Hierarchical (legacy)",
+    "layout.legacyHierarchical": "Generation layers",
     "layout.radial": "Radial",
     "layout.forceDirected": "Force-directed",
     "layout.grid": "Grid",
@@ -96,6 +97,7 @@ const translations = {
     // Detail panel
     "detail.selectPerson": "Select a person",
     "detail.selectHint": "Click on a node in the graph to see details",
+    "person.photoViewer": "Photo viewer",
     "detail.edit": "✏️ Edit",
     "detail.close": "Close person details",
     "detail.changePhoto": "📷 Change",
@@ -152,6 +154,11 @@ const translations = {
     "pic.upload": "⬆ Upload",
     "pic.cancel": "Cancel",
     "pic.remove": "Remove from this person",
+    "pic.openViewer": "Open photo viewer",
+    "pic.closeViewer": "Close photo viewer",
+    "pic.photoAlt": "Enlarged family photo",
+    "pic.peopleInPhoto": "People in this photo",
+    "pic.noPeopleTagged": "No people have been tagged in this photo.",
     "pic.dragHint": "Drag to position · Scroll to zoom",
     "pic.uploadBtn": "✓ Upload",
 
@@ -443,6 +450,7 @@ const translations = {
     "graph.label": "Árbol familiar interactivo",
     "graph.keyboardInstructions": "Usa las flechas para moverte entre personas. Pulsa Intro o Espacio para abrir los detalles, C para centrar la persona seleccionada o Mayús+F10 para abrir sus acciones.",
     "graph.selected": "Seleccionada: {name}",
+    "graph.selectedWithConnections": "Seleccionada: {name}. Conexiones directas: {connections}.",
     "menu.personActions": "Acciones de la persona",
     "search.label": "Buscar una persona",
     "search.placeholder": "Buscar nombre o alias...",
@@ -457,7 +465,7 @@ const translations = {
 
     // Layout modes
     "layout.family": "Árbol familiar",
-    "layout.legacyHierarchical": "Jerárquico (anterior)",
+    "layout.legacyHierarchical": "Capas generacionales",
     "layout.radial": "Radial",
     "layout.forceDirected": "Dirigido por fuerza",
     "layout.grid": "Cuadrícula",
@@ -497,6 +505,7 @@ const translations = {
     // Detail panel
     "detail.selectPerson": "Selecciona una persona",
     "detail.selectHint": "Haz clic en un nodo del grafo para ver detalles",
+    "person.photoViewer": "Visor de fotos",
     "detail.edit": "✏️ Editar",
     "detail.close": "Cerrar detalles de la persona",
     "detail.changePhoto": "📷 Cambiar",
@@ -553,6 +562,11 @@ const translations = {
     "pic.upload": "⬆ Subir",
     "pic.cancel": "Cancelar",
     "pic.remove": "Eliminar de esta persona",
+    "pic.openViewer": "Abrir visor de fotos",
+    "pic.closeViewer": "Cerrar visor de fotos",
+    "pic.photoAlt": "Foto familiar ampliada",
+    "pic.peopleInPhoto": "Personas en esta foto",
+    "pic.noPeopleTagged": "No hay personas etiquetadas en esta foto.",
     "pic.dragHint": "Arrastra para posicionar · Desplaza para zoom",
     "pic.uploadBtn": "✓ Subir",
 

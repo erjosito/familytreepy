@@ -9,7 +9,6 @@ import { useI18n } from "@/lib/i18n";
 
 cytoscape.use(fcose);
 
-const MAX_REFINED_FAMILY_NODES = 350;
 const DEFAULT_RELATIONSHIP_COLORS: Record<string, string> = {};
 
 interface SavedGraphState {
@@ -49,8 +48,9 @@ interface Props {
  * - Orders nodes within each row via barycenter heuristic to minimise edge crossings
  * - Centers parents above their children
  */
-function buildHierarchicalLayout(
-  elements: { data: Record<string, unknown> }[]
+export function buildHierarchicalLayout(
+  elements: { data: Record<string, unknown> }[],
+  groupSiblings = false,
 ): LayoutOptions {
   const nodeEls = elements.filter((el) => !el.data.source);
   const edgeEls = elements.filter((el) => el.data.source);
@@ -118,6 +118,41 @@ function buildHierarchicalLayout(
     for (const m of group) nodeToUnit.set(m, idx);
   }
 
+  // Group sibling family units into blocks. A spouse may have a different
+  // birth family, so choose the parent signature shared by the most people
+  // on this level as the unit's anchor.
+  const siblingBlockByUnit = new Map<number, string>();
+  if (groupSiblings) {
+    for (const lv of sortedLevels) {
+      const ids = levelMap.get(lv)!;
+      const signatureByNode = new Map<string, string>();
+      const signatureFrequency = new Map<string, number>();
+      for (const id of ids) {
+        const signature = [...(parentsOf.get(id) || [])].sort().join("\u0000");
+        if (!signature) continue;
+        signatureByNode.set(id, signature);
+        signatureFrequency.set(signature, (signatureFrequency.get(signature) || 0) + 1);
+      }
+
+      const levelUnits = new Set(ids.map((id) => nodeToUnit.get(id)!));
+      for (const unitIndex of levelUnits) {
+        const candidate = units[unitIndex]
+          .map((member) => signatureByNode.get(member))
+          .filter((signature): signature is string => Boolean(signature))
+          .sort((a, b) =>
+            (signatureFrequency.get(b) || 0) - (signatureFrequency.get(a) || 0)
+            || a.localeCompare(b)
+          )[0];
+        siblingBlockByUnit.set(
+          unitIndex,
+          candidate && (signatureFrequency.get(candidate) || 0) > 1
+            ? `siblings:${candidate}`
+            : `unit:${unitIndex}`,
+        );
+      }
+    }
+  }
+
   // --- 4. Barycenter ordering (multiple passes) --------------------------
   // pos tracks the ordering index of each node within its level row.
   const pos = new Map<string, number>();
@@ -141,30 +176,45 @@ function buildHierarchicalLayout(
     }
 
     // Group by family unit and compute unit barycenter
-    const unitBary = new Map<number, { b: number; members: string[] }>();
+    type UnitBary = { unit: number; b: number; members: string[] };
+    const unitBary = new Map<number, UnitBary>();
     for (const id of ids) {
       const u = nodeToUnit.get(id) ?? -1;
-      if (!unitBary.has(u)) unitBary.set(u, { b: 0, members: [] });
+      if (!unitBary.has(u)) unitBary.set(u, { unit: u, b: 0, members: [] });
       unitBary.get(u)!.members.push(id);
     }
     for (const [, ub] of unitBary) {
       ub.b = ub.members.reduce((s, m) => s + (bary.get(m) ?? 0), 0) / ub.members.length;
     }
 
-    // Sort units by barycenter, flatten, assign positions
-    const sorted = [...unitBary.values()].sort((a, b) => a.b - b.b);
+    // Sort sibling blocks by barycenter, then family units within each block.
+    // This keeps siblings and each sibling's spouse contiguous.
+    const blocks = new Map<string, { b: number; units: UnitBary[] }>();
+    for (const unit of unitBary.values()) {
+      const blockKey = groupSiblings
+        ? siblingBlockByUnit.get(unit.unit) || `unit:${unit.unit}`
+        : `unit:${unit.unit}`;
+      if (!blocks.has(blockKey)) blocks.set(blockKey, { b: 0, units: [] });
+      blocks.get(blockKey)!.units.push(unit);
+    }
+    for (const block of blocks.values()) {
+      block.b = block.units.reduce((sum, unit) => sum + unit.b, 0) / block.units.length;
+      block.units.sort((a, b) => a.b - b.b || a.unit - b.unit);
+    }
+    const sortedBlocks = [...blocks.values()].sort((a, b) => a.b - b.b);
     let p = 0;
-    for (const ub of sorted) {
-      // Within a spouse unit, keep a stable internal order
-      ub.members.sort((a, b) => (pos.get(a) ?? 0) - (pos.get(b) ?? 0));
-      for (const m of ub.members) {
-        pos.set(m, p++);
+    for (const block of sortedBlocks) {
+      for (const unit of block.units) {
+        unit.members.sort((a, b) => (pos.get(a) ?? 0) - (pos.get(b) ?? 0));
+        for (const member of unit.members) {
+          pos.set(member, p++);
+        }
       }
     }
   };
 
-  // Sweep passes (4 full iterations is usually enough for convergence)
-  for (let iter = 0; iter < 4; iter++) {
+  // Additional sweeps improve convergence on larger radius-4 family graphs.
+  for (let iter = 0; iter < 8; iter++) {
     // Top-down: order each level based on parents in the level above
     for (let li = 1; li < sortedLevels.length; li++) {
       reorderLevel(sortedLevels[li], (id) => [
@@ -182,9 +232,10 @@ function buildHierarchicalLayout(
   }
 
   // --- 5. Assign x,y coordinates ----------------------------------------
-  const xSpacing = 160;
-  const spouseGap = 90;  // tighter spacing within a spouse unit
-  const ySpacing = 140;
+  const familyGap = 210;
+  const siblingGap = 145;
+  const spouseGap = 85;
+  const ySpacing = 150;
   const positions: Record<string, { x: number; y: number }> = {};
 
   for (let row = 0; row < sortedLevels.length; row++) {
@@ -195,8 +246,12 @@ function buildHierarchicalLayout(
     let x = 0;
     for (let i = 0; i < ids.length; i++) {
       if (i > 0) {
-        const sameUnit = nodeToUnit.get(ids[i]) === nodeToUnit.get(ids[i - 1]);
-        x += sameUnit ? spouseGap : xSpacing;
+        const leftUnit = nodeToUnit.get(ids[i - 1])!;
+        const rightUnit = nodeToUnit.get(ids[i])!;
+        const sameUnit = leftUnit === rightUnit;
+        const sameSiblingBlock = groupSiblings
+          && siblingBlockByUnit.get(leftUnit) === siblingBlockByUnit.get(rightUnit);
+        x += sameUnit ? spouseGap : sameSiblingBlock ? siblingGap : familyGap;
       }
       positions[ids[i]] = { x, y: row * ySpacing };
     }
@@ -210,7 +265,12 @@ function buildHierarchicalLayout(
   // --- 6. Center family units above children + resolve overlaps ----------
   // Helper: minimum gap between two adjacent nodes on the same level
   const minGap = (a: string, b: string) =>
-    nodeToUnit.get(a) === nodeToUnit.get(b) ? spouseGap : xSpacing;
+    nodeToUnit.get(a) === nodeToUnit.get(b)
+      ? spouseGap
+      : groupSiblings
+        && siblingBlockByUnit.get(nodeToUnit.get(a)!) === siblingBlockByUnit.get(nodeToUnit.get(b)!)
+        ? siblingGap
+        : familyGap;
 
   // Push apart any overlapping nodes on a level (symmetric push)
   const resolveOverlaps = (lv: number) => {
@@ -288,58 +348,6 @@ function buildHierarchicalLayout(
   } as unknown as LayoutOptions;
 }
 
-function buildFamilyLayout(elements: { data: Record<string, unknown> }[]): LayoutOptions {
-  const levels = new Map<number, string[]>();
-  const nodeLevels = new Map<string, number>();
-
-  for (const element of elements) {
-    if (element.data.source) continue;
-    const id = element.data.id as string;
-    const level = typeof element.data.level === "number" ? element.data.level : 0;
-    nodeLevels.set(id, level);
-    if (!levels.has(level)) levels.set(level, []);
-    levels.get(level)!.push(id);
-  }
-
-  const horizontalLevels = [...levels.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([, ids]) => ids)
-    .filter((ids) => ids.length > 1);
-
-  const relativePlacementConstraint = elements
-    .filter((element) => element.data.source && element.data.type === "isChildOf")
-    .flatMap((element) => {
-      const child = element.data.source as string;
-      const parent = element.data.target as string;
-      const childLevel = nodeLevels.get(child);
-      const parentLevel = nodeLevels.get(parent);
-      if (childLevel === undefined || parentLevel === undefined || childLevel <= parentLevel) return [];
-      return [{ top: parent, bottom: child, gap: 150 }];
-    });
-
-  return {
-    name: "fcose",
-    quality: "proof",
-    randomize: false,
-    animate: false,
-    fit: true,
-    padding: 50,
-    nodeDimensionsIncludeLabels: true,
-    uniformNodeDimensions: false,
-    packComponents: false,
-    nodeSeparation: 100,
-    nodeRepulsion: 9000,
-    idealEdgeLength: (edge: { data: (key: string) => unknown }) =>
-      edge.data("type") === "isSpouseOf" ? 100 : 160,
-    edgeElasticity: (edge: { data: (key: string) => unknown }) =>
-      edge.data("type") === "isSpouseOf" ? 0.7 : 0.45,
-    numIter: 1200,
-    gravity: 0.2,
-    alignmentConstraint: { horizontal: horizontalLevels },
-    relativePlacementConstraint,
-  } as LayoutOptions;
-}
-
 function getLayoutConfig(mode: Exclude<LayoutMode, "family">, elements: { data: Record<string, unknown> }[]): LayoutOptions {
   if (mode === "breadthfirst") {
     return buildHierarchicalLayout(elements);
@@ -383,10 +391,24 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
 
   const announceNode = useCallback((nodeId: string) => {
     const person = data.nodes.find((node) => node.id === nodeId);
+    const connectedNames = [...new Set(
+      data.edges.flatMap((edge) => {
+        if (edge.source === nodeId) return [edge.target];
+        if (edge.target === nodeId) return [edge.source];
+        return [];
+      }),
+    )]
+      .map((id) => data.nodes.find((node) => node.id === id)?.fullname)
+      .filter((name): name is string => Boolean(name))
+      .sort((a, b) => a.localeCompare(b));
     if (statusRef.current) {
-      statusRef.current.textContent = t("graph.selected").replace("{name}", person?.fullname || "?");
+      statusRef.current.textContent = connectedNames.length > 0
+        ? t("graph.selectedWithConnections")
+            .replace("{name}", person?.fullname || "?")
+            .replace("{connections}", connectedNames.join(", "))
+        : t("graph.selected").replace("{name}", person?.fullname || "?");
     }
-  }, [data.nodes, t]);
+  }, [data.edges, data.nodes, t]);
 
   const selectKeyboardNode = useCallback((index: number, center = true) => {
     const cy = cyRef.current;
@@ -440,6 +462,8 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
     (e: EventObject) => {
       if (cyRef.current && e.target !== cyRef.current && e.target.isNode()) {
         if (Date.now() < suppressTapUntilRef.current) return;
+        cyRef.current.elements().unselect();
+        e.target.select();
         onNodeClick?.(e.target.id());
       }
     },
@@ -537,6 +561,7 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
     cyRef.current = cytoscape({
       container: containerRef.current,
       elements,
+      selectionType: "single",
       style: [
         // Nodes without profile picture
         {
@@ -624,13 +649,6 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
             width: 3,
           } as cytoscape.Css.Edge,
         },
-        {
-          selector: "node:selected",
-          style: {
-            "border-width": 3,
-            "border-color": "#2563eb",
-          },
-        },
         // Deceased indicator: subtle dark cross badge
         {
           selector: 'node[isDeceased = "yes"]',
@@ -641,6 +659,38 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
             opacity: 0.8,
           } as cytoscape.Css.Node,
         },
+        {
+          selector: ".trace-muted",
+          style: {
+            opacity: 0.16,
+          } as cytoscape.Css.Node,
+        },
+        {
+          selector: "node.trace-neighbor",
+          style: {
+            opacity: 1,
+            "border-width": 4,
+            "border-color": "#f59e0b",
+            "z-index": 10,
+          } as cytoscape.Css.Node,
+        },
+        {
+          selector: "edge.trace-connected",
+          style: {
+            opacity: 1,
+            width: 5,
+            "z-index": 9,
+          } as cytoscape.Css.Edge,
+        },
+        {
+          selector: "node:selected",
+          style: {
+            opacity: 1,
+            "border-width": 5,
+            "border-color": "#2563eb",
+            "z-index": 11,
+          },
+        },
       ],
       layout: canRestoreGraphState && savedGraphState
         ? {
@@ -649,25 +699,34 @@ export default function GraphViewer({ data, layout = "family", onNodeClick, onNo
             fit: false,
           }
         : layout === "family"
-          ? buildHierarchicalLayout(elements)
+          ? buildHierarchicalLayout(elements, true)
           : getLayoutConfig(layout, elements),
     });
 
     cyRef.current.on("tap", "node", handleTap);
     cyRef.current.on("dbltap", "node", handleDblTap);
     cyRef.current.on("taphold", "node", handleTapHold);
+    const syncRelationshipHighlight = () => {
+      const cy = cyRef.current;
+      if (!cy) return;
+      cy.elements().removeClass("trace-muted trace-neighbor trace-connected");
+      const selected = cy.$("node:selected").first().nodes();
+      if (selected.empty()) return;
+      const connectedEdges = selected.connectedEdges();
+      const connectedNodes = connectedEdges.connectedNodes().difference(selected);
+      connectedEdges.addClass("trace-connected");
+      connectedNodes.addClass("trace-neighbor");
+      const highlighted = selected.union(connectedEdges).union(connectedNodes);
+      cy.elements().difference(highlighted).addClass("trace-muted");
+    };
+    cyRef.current.on("select unselect", "node", syncRelationshipHighlight);
 
     if (canRestoreGraphState && savedGraphState) {
       cyRef.current.zoom(savedGraphState.zoom);
       cyRef.current.pan(savedGraphState.pan);
-    } else if (layout === "family" && data.nodes.length <= MAX_REFINED_FAMILY_NODES) {
-      try {
-        cyRef.current.layout(buildFamilyLayout(elements)).run();
-      } catch (error) {
-        console.error("Family layout refinement failed; using legacy hierarchical positions.", error);
-      }
     }
     applyPendingFocus();
+    syncRelationshipHighlight();
 
     return () => {
       const cy = cyRef.current;
