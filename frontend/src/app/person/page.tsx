@@ -11,16 +11,15 @@ import { formatDate, formatTimestamp } from "@/lib/dateUtils";
 import { useToast } from "@/components/ToastProvider";
 import ValidationMessages from "@/components/ValidationMessages";
 import { PhotoPicker, ProfilePhotoCrop, UploadProgress } from "@/components/PhotoTools";
+import PhotoLightbox, { type LightboxPhoto } from "@/components/PhotoLightbox";
 import type { PreparedPhoto } from "@/lib/photoProcessing";
 import { uploadPhotoWithProgress } from "@/lib/photoUpload";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TFunc = (key: any) => string;
 
-interface LightboxPhoto {
+interface PersonLightboxPhoto extends LightboxPhoto {
   sourceUrl: string;
-  url: string;
-  people: { id: string; fullname: string }[];
 }
 
 import { Suspense } from "react";
@@ -50,7 +49,7 @@ function PersonPageContent() {
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [deletingNoteIndex, setDeletingNoteIndex] = useState<number | null>(null);
-  const [lightboxPhoto, setLightboxPhoto] = useState<LightboxPhoto | null>(null);
+  const [lightboxPhoto, setLightboxPhoto] = useState<PersonLightboxPhoto | null>(null);
   const updateLightboxPeople = useCallback((
     sourceUrl: string,
     people: { id: string; fullname: string }[],
@@ -362,7 +361,6 @@ function PersonPageContent() {
         <PhotoLightbox
           photo={lightboxPhoto}
           onClose={() => setLightboxPhoto(null)}
-          t={t}
         />
       )}
     </div>
@@ -740,91 +738,6 @@ function ProfileHeader({
 }
 
 /* ------------------------------------------------------------------ */
-/* Full-screen photo viewer                                             */
-/* ------------------------------------------------------------------ */
-function PhotoLightbox({
-  photo,
-  onClose,
-  t,
-}: {
-  photo: LightboxPhoto;
-  onClose: () => void;
-  t: TFunc;
-}) {
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeButtonRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      previouslyFocused?.focus();
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("person.photoViewer")}
-      className="fixed inset-0 z-[300] flex cursor-pointer items-center justify-center bg-black/85 p-4 pt-20"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <button
-        ref={closeButtonRef}
-        type="button"
-        className="fixed right-4 top-16 z-[310] flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-black/80 text-2xl text-white shadow-lg hover:bg-black"
-        aria-label={t("pic.closeViewer")}
-        title={t("pic.closeViewer")}
-        onClick={onClose}
-      >
-        ✕
-      </button>
-      <div
-        className="max-h-full max-w-[94vw] cursor-default overflow-y-auto rounded-lg bg-gray-950 shadow-2xl"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <img
-          src={photo.url}
-          alt={t("pic.photoAlt")}
-          className="max-h-[calc(100vh-14rem)] w-full object-contain"
-        />
-        <div className="border-t border-white/20 bg-black/80 p-3 text-white">
-          <h2 className="text-sm font-semibold">
-            {t("pic.peopleInPhoto")}
-          </h2>
-          {photo.people.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {photo.people.map((person) => (
-                <Link
-                  key={person.id}
-                  href={`/person/?id=${person.id}`}
-                  onClick={onClose}
-                  className="rounded-full border border-blue-300 bg-blue-950 px-3 py-1 text-sm text-blue-100 hover:bg-blue-900"
-                >
-                  {person.fullname}
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-1 text-sm text-gray-300">{t("pic.noPeopleTagged")}</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Pictures section with upload, tagging, and removal                   */
 /* ------------------------------------------------------------------ */
 function PersonPictures({
@@ -845,7 +758,7 @@ function PersonPictures({
   onLightbox: (
     sourceUrl: string,
     url: string,
-    people: { id: string; fullname: string }[],
+    people?: { id: string; fullname: string }[],
   ) => void;
   onLightboxPeopleChange: (
     sourceUrl: string,
@@ -1097,7 +1010,7 @@ function PictureCard({
   onLightbox: (
     sourceUrl: string,
     url: string,
-    people: { id: string; fullname: string }[],
+    people?: { id: string; fullname: string }[],
   ) => void;
   onLightboxPeopleChange: (
     sourceUrl: string,
@@ -1110,22 +1023,26 @@ function PictureCard({
 }) {
   const toast = useToast();
   const [people, setPeople] = useState<{ id: string; fullname: string }[]>([]);
+  const [peopleLoaded, setPeopleLoaded] = useState(false);
   const [showTagEditor, setShowTagEditor] = useState(false);
   const [tagQuery, setTagQuery] = useState("");
   const [taggingId, setTaggingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setPeopleLoaded(false);
     getPeopleInPicture(personId, url)
       .then((loadedPeople) => {
         if (cancelled) return;
         setPeople(loadedPeople);
+        setPeopleLoaded(true);
         onLightboxPeopleChange(url, loadedPeople);
       })
       .catch((err) => {
         if (cancelled) return;
         console.error("Loading picture tags failed:", err);
         setPeople([]);
+        setPeopleLoaded(true);
         onLightboxPeopleChange(url, []);
       });
     return () => {
@@ -1182,7 +1099,11 @@ function PictureCard({
           type="button"
           className="block w-full rounded-lg focus-visible:outline-offset-2"
           aria-label={t("pic.openViewer")}
-          onClick={() => onLightbox(url, withSas(url) || url, people)}
+          onClick={() => onLightbox(
+            url,
+            withSas(url) || url,
+            peopleLoaded ? people : undefined,
+          )}
         >
           <img
             src={withSas(url) || url}

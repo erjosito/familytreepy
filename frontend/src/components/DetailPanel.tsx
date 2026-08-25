@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { PersonNode, GraphEdge } from "@/lib/types";
-import { updatePerson, tagPicture, removePicture, deactivateRelationship, reactivateRelationship, deleteRelationship, rollbackHistory, getNotes, addNote, deleteNote, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
+import { updatePerson, tagPicture, removePicture, getPeopleInPicture, deactivateRelationship, reactivateRelationship, deleteRelationship, rollbackHistory, getNotes, addNote, deleteNote, getValidationIssues, type Note, type ValidationIssue } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAdminView } from "@/lib/adminView";
 import { formatDate, formatTimestamp } from "@/lib/dateUtils";
@@ -11,6 +11,7 @@ import { useToast } from "@/components/ToastProvider";
 import type { PersonActionDefinition } from "@/lib/personActions";
 import ValidationMessages from "@/components/ValidationMessages";
 import { PhotoPicker, ProfilePhotoCrop, UploadProgress } from "@/components/PhotoTools";
+import PhotoLightbox, { type LightboxPhoto } from "@/components/PhotoLightbox";
 import type { PreparedPhoto } from "@/lib/photoProcessing";
 import { uploadPhotoWithProgress } from "@/lib/photoUpload";
 
@@ -523,9 +524,13 @@ function PicturesGallery({
   const uploadAbort = useRef<AbortController | null>(null);
   const [taggedIds, setTaggedIds] = useState<string[]>([]);
   const [removing, setRemoving] = useState<string | null>(null);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxPhoto, setLightboxPhoto] = useState<(LightboxPhoto & { sourceUrl: string }) | null>(null);
 
   const pics = person.pictures && person.pictures.length > 0 ? person.pictures : [];
+
+  useEffect(() => {
+    setLightboxPhoto(null);
+  }, [person.id]);
 
   const handleSelected = (photo: PreparedPhoto) => {
     if (preview) URL.revokeObjectURL(preview.previewUrl);
@@ -598,6 +603,25 @@ function PicturesGallery({
     }
   };
 
+  const openLightbox = async (url: string) => {
+    setLightboxPhoto({
+      sourceUrl: url,
+      url: withSas(url) || url,
+    });
+    try {
+      const people = await getPeopleInPicture(person.id, url);
+      setLightboxPhoto((current) =>
+        current?.sourceUrl === url ? { ...current, people } : current
+      );
+    } catch (err) {
+      console.error("Loading picture tags failed:", err);
+      setLightboxPhoto((current) =>
+        current?.sourceUrl === url ? { ...current, people: [] } : current
+      );
+      toast.error(t("pic.peopleLoadFailed"));
+    }
+  };
+
   const toggleTag = (id: string) => {
     setTaggedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
@@ -664,12 +688,18 @@ function PicturesGallery({
         <div className="grid grid-cols-2 gap-2">
           {pics.map((url, i) => (
             <div key={`pic-${i}-${url.slice(-12)}`} className="relative group">
-              <img
-                src={withSas(url) || url}
-                alt=""
-                className="rounded border object-contain h-24 w-full cursor-pointer bg-gray-100"
-                onClick={() => setLightboxUrl(withSas(url) || url)}
-              />
+              <button
+                type="button"
+                className="block w-full rounded focus-visible:outline-offset-2"
+                aria-label={t("pic.openViewer")}
+                onClick={() => openLightbox(url)}
+              >
+                <img
+                  src={withSas(url) || url}
+                  alt=""
+                  className="h-24 w-full rounded border bg-gray-100 object-contain"
+                />
+              </button>
               <button
                 onClick={() => handleRemove(url)}
                 disabled={removing === url}
@@ -684,24 +714,11 @@ function PicturesGallery({
       )}
 
       {/* Lightbox */}
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center cursor-pointer"
-          onClick={() => setLightboxUrl(null)}
-        >
-          <button
-            className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300"
-            onClick={() => setLightboxUrl(null)}
-          >
-            ✕
-          </button>
-          <img
-            src={lightboxUrl}
-            alt=""
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
+      {lightboxPhoto && (
+        <PhotoLightbox
+          photo={lightboxPhoto}
+          onClose={() => setLightboxPhoto(null)}
+        />
       )}
     </div>
   );

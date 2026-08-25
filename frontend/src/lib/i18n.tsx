@@ -158,7 +158,9 @@ const translations = {
     "pic.closeViewer": "Close photo viewer",
     "pic.photoAlt": "Enlarged family photo",
     "pic.peopleInPhoto": "People in this photo",
+    "pic.loadingPeople": "Loading tagged people...",
     "pic.noPeopleTagged": "No people have been tagged in this photo.",
+    "pic.peopleLoadFailed": "The tagged people could not be loaded.",
     "pic.dragHint": "Drag to position · Scroll to zoom",
     "pic.uploadBtn": "✓ Upload",
 
@@ -566,7 +568,9 @@ const translations = {
     "pic.closeViewer": "Cerrar visor de fotos",
     "pic.photoAlt": "Foto familiar ampliada",
     "pic.peopleInPhoto": "Personas en esta foto",
+    "pic.loadingPeople": "Cargando personas etiquetadas...",
     "pic.noPeopleTagged": "No hay personas etiquetadas en esta foto.",
+    "pic.peopleLoadFailed": "No se pudieron cargar las personas etiquetadas.",
     "pic.dragHint": "Arrastra para posicionar · Desplaza para zoom",
     "pic.uploadBtn": "✓ Subir",
 
