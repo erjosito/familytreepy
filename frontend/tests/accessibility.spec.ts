@@ -161,6 +161,29 @@ test("family graph supports keyboard exploration and actions", async ({ page }) 
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
+test("centering a person synchronizes graph selection and details", async ({ page }) => {
+  await mockRepresentativeApi(page);
+  await page.goto("/");
+
+  const graph = page.getByRole("application", { name: "Interactive family tree" });
+  await graph.focus();
+  await page.locator("#graph-center-person").selectOption("charles");
+
+  await expect(page.locator("#graph-keyboard-status")).toContainText("Charles Babbage");
+  await expect(page.getByRole("heading", { name: "Charles Babbage" })).toBeVisible();
+  await expect(page).toHaveURL(/center=charles/);
+  await expect(page).toHaveURL(/person=charles/);
+
+  await page.locator("#graph-keyboard-status").evaluate((element) => {
+    element.textContent = "";
+  });
+  if (page.viewportSize()?.width === 320) {
+    await page.getByRole("button", { name: "More actions" }).click();
+  }
+  await page.getByRole("button", { name: /Center on this person/ }).click();
+  await expect(page.locator("#graph-keyboard-status")).toContainText("Charles Babbage");
+});
+
 test("photo viewer exposes tags and restores focus when closed", async ({ page }) => {
   await mockRepresentativeApi(page);
   await page.goto("/person/?id=ada");
@@ -180,6 +203,27 @@ test("photo viewer exposes tags and restores focus when closed", async ({ page }
   await page.keyboard.press("Escape");
   await expect(viewer).toBeHidden();
   await expect(openButton).toBeFocused();
+});
+
+test("tree detail photos use the tagged-person viewer", async ({ page }) => {
+  await mockRepresentativeApi(page);
+  await page.goto("/");
+
+  const graph = page.getByRole("application", { name: "Interactive family tree" });
+  await graph.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Ada Lovelace" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open photo viewer" }).click();
+  const viewer = page.getByRole("dialog", { name: "Photo viewer" });
+  await expect(viewer.getByRole("button", { name: "Close photo viewer" })).toBeVisible();
+  await expect(viewer.getByText("Loading tagged people...")).toBeVisible();
+  const taggedPerson = viewer.getByRole("link", { name: "Charles Babbage" });
+  await expect(taggedPerson).toBeVisible();
+
+  await taggedPerson.click();
+  await expect(page).toHaveURL(/\/person\/\?id=charles$/);
+  await expect(viewer).toBeHidden();
 });
 
 test("family layout keeps spouses and sibling families together", () => {

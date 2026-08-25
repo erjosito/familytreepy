@@ -259,9 +259,15 @@ export default function ExplorePage() {
     setContextMenu({ nodeId, x, y });
   }, []);
 
-  const handleNodeDblClick = useCallback((nodeId: string) => {
+  const centerOnPerson = useCallback((nodeId: string) => {
+    setNodeFocus((current) => ({ id: nodeId, request: current.request + 1 }));
     updateRoot(nodeId, "push");
-  }, [updateRoot]);
+    handleNodeClick(nodeId);
+  }, [handleNodeClick, updateRoot]);
+
+  const handleNodeDblClick = useCallback((nodeId: string) => {
+    centerOnPerson(nodeId);
+  }, [centerOnPerson]);
 
   const handleContextAction = async (action: string) => {
     const nodeId = contextMenu?.nodeId;
@@ -278,7 +284,7 @@ export default function ExplorePage() {
 
   const handleAction = async (action: string, nodeId: string) => {
     if (action === "center") {
-      updateRoot(nodeId, "push");
+      centerOnPerson(nodeId);
     } else if (action === "story") {
       window.location.href = `/story/?id=${nodeId}&degree=3`;
     } else if (action === "delete") {
@@ -433,11 +439,7 @@ export default function ExplorePage() {
       <header className="flex flex-col gap-2 bg-white px-3 py-2 shadow-sm border-b md:flex-row md:items-center md:gap-4 md:px-4 md:py-3">
         <PersonSearch
           persons={personList}
-          onSelect={(person) => {
-            setNodeFocus((current) => ({ id: person.id, request: current.request + 1 }));
-            updateRoot(person.id, "push");
-            handleNodeClick(person.id);
-          }}
+          onSelect={(person) => centerOnPerson(person.id)}
         />
         <div className="flex min-w-0 items-center gap-2">
           <label htmlFor="graph-center-person" className="shrink-0 text-sm text-gray-700">{t("toolbar.center")}</label>
@@ -445,7 +447,14 @@ export default function ExplorePage() {
             id="graph-center-person"
             className="min-w-0 flex-1 border rounded px-2 py-2 text-sm text-gray-900 md:max-w-[250px] md:py-1"
             value={rootId}
-            onChange={(e) => updateRoot(e.target.value, "push")}
+            onChange={(event) => {
+              const nodeId = event.target.value;
+              if (nodeId) {
+                centerOnPerson(nodeId);
+              } else {
+                updateRoot("", "push");
+              }
+            }}
           >
             <option value="">{t("toolbar.all")}</option>
             {[...personList].sort((a, b) => a.fullname.localeCompare(b.fullname)).map((p) => (
