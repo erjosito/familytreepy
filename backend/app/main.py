@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from backend.app.routers import persons, relationships, graph, auth_router, geni, history
 from familytree import ConcurrentWriteError
 
-APP_VERSION = "0.9.0"
+APP_VERSION = "0.10.0"
 
 app = FastAPI(
     title="Family Tree API",

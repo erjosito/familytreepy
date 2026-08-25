@@ -14,6 +14,9 @@ Admin routes.
   Enter or Space to open details, `C` to center the selected person, and
   Shift+F10 to open person actions.
 - In a person action menu, use Up/Down, Home, End, Enter, and Escape.
+- Open a gallery photo with Enter or Space. In the photo viewer, use the
+  tagged-person links normally and press Escape or the close button to return
+  focus to the gallery thumbnail.
 
 ## Manual release checks
 
@@ -31,6 +34,8 @@ forms, dialogs, graph interaction, or responsive layout changes.
    do not animate.
 5. Enable a forced-colors/high-contrast theme and confirm that controls,
    selection, status text, and relationship labels remain distinguishable.
+6. Select a graph person and confirm that direct relatives and connecting
+   relationships remain prominent while unrelated people are visibly muted.
 
 Run the automated checks locally after creating a production build:
 
